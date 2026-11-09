@@ -1,0 +1,291 @@
+{
+  "files": {},
+  "meetings": [],
+  "workspace": {
+    "id": "ws_main",
+    "name": "CIRCLE Workspace",
+    "tagline": "Enterprise Collaboration & Management",
+    "logo_file_id": null,
+    "login_image_file_id": "default_login_bg",
+    "theme": {
+      "primary": "#2F7DE1",
+      "mode": "light"
+    },
+    "task_statuses": [
+      "todo",
+      "in_progress",
+      "in_review",
+      "done"
+    ],
+    "task_fields": [
+      {
+        "name": "priority"
+      },
+      {
+        "name": "estimate"
+      }
+    ],
+    "divisions": [
+      "Engineering",
+      "Product",
+      "Operations",
+      "Design"
+    ],
+    "item_types": []
+  },
+  "users": [
+    {
+      "user_id": "user_admin1",
+      "email": "admin@asliri.local",
+      "name": "Admin ASLI RI",
+      "role": "super_admin",
+      "job_title": "Workspace Administrator",
+      "department": "Engineering",
+      "online": true,
+      "is_demo": false,
+      "status": "active",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
+      "picture": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80"
+    },
+    {
+      "user_id": "user_circle_assistant",
+      "email": "circle-bot@asliri.local",
+      "name": "Circle",
+      "role": "assistant",
+      "job_title": "Workspace AI Assistant",
+      "department": "System",
+      "online": true,
+      "is_demo": false,
+      "is_bot": true,
+      "status": "active",
+      "avatar": "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364",
+      "picture": "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364"
+    },
+    {
+      "user_id": "user_budi",
+      "email": "budi@asliri.local",
+      "name": "Budi Santoso",
+      "role": "department_manager",
+      "job_title": "Product Manager",
+      "department": "Product",
+      "online": true,
+      "is_demo": true,
+      "status": "active",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
+      "picture": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80"
+    },
+    {
+      "user_id": "user_siti",
+      "email": "siti@asliri.local",
+      "name": "Siti Rahma",
+      "role": "employee",
+      "job_title": "Engineering Lead",
+      "department": "Engineering",
+      "online": true,
+      "is_demo": true,
+      "status": "active",
+      "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80",
+      "picture": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80"
+    },
+    {
+      "user_id": "user_dian",
+      "email": "dian@asliri.local",
+      "name": "Dian Pratama",
+      "role": "employee",
+      "job_title": "UI/UX Designer",
+      "department": "Design",
+      "online": true,
+      "is_demo": true,
+      "status": "active",
+      "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80",
+      "picture": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80"
+    },
+    {
+      "user_id": "user_1794156601037",
+      "email": "raditya@creative.id",
+      "name": "Raditya Pratama",
+      "role": "employee",
+      "job_title": "Senior UI Designer",
+      "department": "Design",
+      "status": "active",
+      "online": false,
+      "is_demo": false,
+      "avatar": "https://api.dicebear.com/7.x/initials/svg?seed=Raditya%20Pratama"
+    }
+  ],
+  "labels": [
+    {
+      "id": "lbl_1",
+      "name": "High Priority",
+      "color": "#FF5364",
+      "description": "Urgent items"
+    },
+    {
+      "id": "lbl_2",
+      "name": "Feature",
+      "color": "#2F7DE1",
+      "description": "New features"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif_1794156601038_user_admin1",
+      "user_id": "user_admin1",
+      "title": "Permintaan Akses Masuk Baru",
+      "body": "Raditya Pratama (Design) mengajukan permohonan akses masuk",
+      "type": "access_request",
+      "read": false,
+      "created_at": "2026-11-08T16:50:01.038Z"
+    }
+  ],
+  "tasks": [],
+  "projects": [],
+  "boards": [
+    {
+      "id": "brd_1",
+      "name": "Main Board",
+      "description": "Main tasks",
+      "department": "Semua Divisi",
+      "member_ids": []
+    },
+    {
+      "id": "brd_1794156613712",
+      "department": "Engineering",
+      "member_ids": [
+        "user_admin1",
+        "user_siti",
+        "user_dian"
+      ],
+      "created_by": "user_admin1",
+      "name": "Sprint Engineering"
+    },
+    {
+      "id": "brd_1794156613720",
+      "department": "Design",
+      "member_ids": [
+        "user_dian"
+      ],
+      "created_by": "user_admin1",
+      "name": "Sprint UI/UX"
+    }
+  ],
+  "conversations": [
+    {
+      "id": "conv_circle_user_admin1",
+      "type": "dm",
+      "name": "Circle (Workspace Assistant)",
+      "admin_ids": [],
+      "members": [
+        "user_circle_assistant",
+        "user_admin1"
+      ],
+      "member_ids": [
+        "user_circle_assistant",
+        "user_admin1"
+      ],
+      "unread": 1,
+      "last_message_preview": "Permintaan akses baru dari Raditya Pratama",
+      "last_message_at": "2026-11-08T16:50:01.037Z"
+    }
+  ],
+  "groups": [],
+  "messages": [
+    {
+      "id": "msg_req_req_1794156601037_user_admin1",
+      "conversation_id": "conv_circle_user_admin1",
+      "sender_id": "user_circle_assistant",
+      "user_id": "user_circle_assistant",
+      "text": "Halo Admin! Ada permohonan akses login baru ke workspace dari Raditya Pratama (raditya@creative.id) untuk divisi Design. Silakan tinjau card approval di bawah ini:",
+      "type": "access_request_card",
+      "access_request": {
+        "id": "req_1794156601037",
+        "name": "Raditya Pratama",
+        "email": "raditya@creative.id",
+        "department": "Design",
+        "job_title": "Senior UI Designer",
+        "note": "Butuh akses untuk mengelola task board divisi Design.",
+        "status": "approved",
+        "created_at": "2026-11-08T16:50:01.037Z",
+        "approved_by": "Admin ASLI RI",
+        "approved_at": "2026-11-08T16:50:01.072Z",
+        "assigned_role": "employee",
+        "assigned_department": "Design"
+      },
+      "created_at": "2026-11-08T16:50:01.037Z"
+    },
+    {
+      "id": "msg_approved_1794156601072",
+      "conversation_id": "conv_circle_user_admin1",
+      "sender_id": "user_circle_assistant",
+      "user_id": "user_circle_assistant",
+      "text": "✅ Permintaan akses untuk Raditya Pratama (raditya@creative.id) telah berhasil disetujui oleh Admin ASLI RI dengan role employee. Karyawan kini dapat login langsung.",
+      "type": "text",
+      "created_at": "2026-11-08T16:50:01.072Z"
+    }
+  ],
+  "posts": [],
+  "org_units": [],
+  "activity": [
+    {
+      "id": "act_1794153776145",
+      "actor_id": "user_admin1",
+      "action": "created task",
+      "task_id": "tsk_1794153776145",
+      "task_title": "Temporary Audit Task",
+      "created_at": "2026-11-08T16:02:56.145Z"
+    },
+    {
+      "id": "act_1794153694290",
+      "actor_id": "user_admin1",
+      "action": "created task",
+      "task_id": "tsk_1794153694290",
+      "task_title": "Audit Test Task",
+      "created_at": "2026-11-08T16:01:34.290Z"
+    },
+    {
+      "id": "act_1794153694268",
+      "actor_id": "user_admin1",
+      "action": "scheduled a meeting",
+      "task_id": "mtg_1794153694268",
+      "task_title": "Audit Sync Test",
+      "created_at": "2026-11-08T16:01:34.268Z"
+    }
+  ],
+  "reminders": [],
+  "polls": [],
+  "task_automations": [],
+  "audit_logs": [
+    {
+      "id": "log_1794153776145",
+      "actor_id": "user_admin1",
+      "actor_name": "Admin ASLI RI",
+      "action": "membuat tugas baru: TSK-002 - Temporary Audit Task",
+      "created_at": "2026-11-08T16:02:56.145Z"
+    },
+    {
+      "id": "log_1794153694290",
+      "actor_id": "user_admin1",
+      "actor_name": "Admin ASLI RI",
+      "action": "membuat tugas baru: TSK-001 - Audit Test Task",
+      "created_at": "2026-11-08T16:01:34.290Z"
+    }
+  ],
+  "invitations": [],
+  "prefs": {},
+  "access_requests": [
+    {
+      "id": "req_1794156601037",
+      "name": "Raditya Pratama",
+      "email": "raditya@creative.id",
+      "department": "Design",
+      "job_title": "Senior UI Designer",
+      "note": "Butuh akses untuk mengelola task board divisi Design.",
+      "status": "approved",
+      "created_at": "2026-11-08T16:50:01.037Z",
+      "approved_by": "Admin ASLI RI",
+      "approved_at": "2026-11-08T16:50:01.072Z",
+      "assigned_role": "employee",
+      "assigned_department": "Design"
+    }
+  ]
+}
