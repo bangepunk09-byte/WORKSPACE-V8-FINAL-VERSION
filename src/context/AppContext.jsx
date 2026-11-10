@@ -12,11 +12,33 @@ export const useApp = () => useContext(AppCtx);
 
 const DEFAULT_USERS = [
   { user_id: "user_admin1", name: "Admin ASLI RI", email: "admin@asliri.local", role: "super_admin", job_title: "Super Admin", department: "Management", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" },
-  { user_id: "user_superadmin_saeful", name: "Saeful Rohman", email: "saeful@asliri.id", role: "super_admin", job_title: "Chief Executive Officer", department: "Management", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80" },
-  { user_id: "user_budi", name: "Budi Santoso", email: "budi@asliri.id", role: "department_manager", job_title: "Head of Product", department: "Product", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80" },
-  { user_id: "user_siti", name: "Siti Aminah", email: "siti@asliri.id", role: "department_manager", job_title: "VP of Engineering", department: "Engineering", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80" },
-  { user_id: "user_dian", name: "Dian Sastro", email: "dian@asliri.id", role: "employee", job_title: "Lead UI/UX Designer", department: "Design", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80" }
+  { user_id: "user_superadmin_saeful", name: "Saeful", email: "saeful@asliri.id", role: "super_admin", job_title: "Super Administrator", department: "Management", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" }
 ];
+
+try {
+  if (typeof window !== "undefined" && localStorage.getItem("circle_prod_clean_v2") !== "1") {
+    const keysToClear = [
+      "circle_tasks_cache",
+      "circle_cache_tasks",
+      "circle_users_cache",
+      "circle_projects_cache",
+      "circle_groups_cache",
+      "circle_cache_posts",
+      "circle_cache_meetings",
+      "circle_cache_conversations",
+      "circle_drive_shortcuts_cache",
+      "circle_stats_team_cache",
+      "circle_stats_team_cache_7d",
+      "circle_stats_team_cache_4w",
+      "circle_org_units_cache",
+      "circle_boards_cache",
+      "circle_notifications_cache",
+      "circle_session_cache"
+    ];
+    keysToClear.forEach((k) => localStorage.removeItem(k));
+    localStorage.setItem("circle_prod_clean_v2", "1");
+  }
+} catch {}
 
 const DEFAULT_SESSION = {
   user: DEFAULT_USERS[0],
@@ -36,7 +58,7 @@ export function AppProvider({ children }) {
       const cached = localStorage.getItem("circle_session_cache");
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed.user) return parsed;
+        if (parsed && parsed.user && parsed.user.role === "super_admin") return parsed;
       }
     } catch {}
     return DEFAULT_SESSION;

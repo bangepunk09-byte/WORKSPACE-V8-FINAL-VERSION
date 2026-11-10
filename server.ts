@@ -195,55 +195,6 @@ async function startServer() {
     }
   }
 
-  // Ensure demo users with different departments exist
-  const demoUsers = [
-    {
-      user_id: "user_budi",
-      email: "budi@asliri.local",
-      name: "Budi Santoso",
-      role: "department_manager",
-      job_title: "Product Manager",
-      department: "Product",
-      online: true,
-      is_demo: true,
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
-      picture: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80"
-    },
-    {
-      user_id: "user_siti",
-      email: "siti@asliri.local",
-      name: "Siti Rahma",
-      role: "employee",
-      job_title: "Engineering Lead",
-      department: "Engineering",
-      online: true,
-      is_demo: true,
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80",
-      picture: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80"
-    },
-    {
-      user_id: "user_dian",
-      email: "dian@asliri.local",
-      name: "Dian Pratama",
-      role: "employee",
-      job_title: "UI/UX Designer",
-      department: "Design",
-      online: true,
-      is_demo: true,
-      status: "active",
-      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80",
-      picture: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80"
-    }
-  ];
-
-  demoUsers.forEach((du) => {
-    if (!db.users.some((u: any) => u.user_id === du.user_id || u.email === du.email)) {
-      db.users.push(du);
-    }
-  });
-
   // Ensure Super Admin user saeful@asliri.id exists
   let saefulAdmin = db.users.find((u: any) => u.email?.toLowerCase() === "saeful@asliri.id");
   if (!saefulAdmin) {
@@ -268,6 +219,126 @@ async function startServer() {
     if (!saefulAdmin.password) saefulAdmin.password = "AsliRi2026!";
   }
 
+  // Production cleanup: clear all tasks and remove non-super-admin accounts
+  if (!db.prod_clean_v2) {
+    db.users = (db.users || []).filter(
+      (u: any) => u.role === "super_admin" || u.user_id === CIRCLE_BOT_ID || u.is_bot || u.role === "assistant"
+    );
+    const validIds = new Set(db.users.map((u: any) => u.user_id));
+    const validHumanIds = db.users
+      .filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID)
+      .map((u: any) => u.user_id);
+
+    db.tasks = [];
+    db.access_requests = [];
+    db.invitations = [];
+    db.notifications = [];
+    db.activity = [];
+
+    if (Array.isArray(db.messages)) {
+      db.messages = db.messages.filter(
+        (m: any) =>
+          !m.id?.startsWith("msg_req_") &&
+          !m.access_request &&
+          validIds.has(m.sender_id)
+      );
+    }
+
+    if (Array.isArray(db.conversations)) {
+      db.conversations = db.conversations
+        .filter((c: any) => {
+          if (c.type === "dm") {
+            const mems = Array.isArray(c.member_ids) ? c.member_ids : [];
+            return mems.every((id: string) => validIds.has(id));
+          }
+          return true;
+        })
+        .map((c: any) => {
+          const next = { ...c };
+          if (Array.isArray(next.member_ids)) {
+            next.member_ids = next.member_ids.filter((id: string) => validIds.has(id));
+          }
+          if (Array.isArray(next.members)) {
+            next.members = next.members.filter((id: string) => validIds.has(id));
+          }
+          if (next.last_message?.id?.startsWith("msg_req_") || next.last_message?.access_request) {
+            next.last_message = null;
+          }
+          return next;
+        });
+    }
+
+    if (Array.isArray(db.groups)) {
+      db.groups.forEach((g: any) => {
+        g.member_ids = [...validHumanIds];
+        g.members = [...validHumanIds];
+        g.member_count = validHumanIds.length;
+      });
+    }
+
+    if (Array.isArray(db.boards)) {
+      db.boards.forEach((b: any) => {
+        b.member_ids = [...validHumanIds];
+      });
+    }
+
+    if (Array.isArray(db.projects)) {
+      db.projects.forEach((p: any) => {
+        if (!validIds.has(p.owner_id)) p.owner_id = "user_admin1";
+        p.member_ids = [...validHumanIds];
+      });
+    }
+
+    if (Array.isArray(db.meetings)) {
+      db.meetings.forEach((m: any) => {
+        if (!validIds.has(m.created_by)) m.created_by = "user_admin1";
+        m.attendee_ids = Array.isArray(m.attendee_ids)
+          ? m.attendee_ids.filter((id: string) => validIds.has(id))
+          : [...validHumanIds];
+        if (m.attendee_ids.length === 0) m.attendee_ids = [...validHumanIds];
+      });
+    }
+
+    if (Array.isArray(db.posts)) {
+      db.posts = db.posts
+        .filter((p: any) => validIds.has(p.author_id))
+        .map((p: any) => ({
+          ...p,
+          likes: Array.isArray(p.likes) ? p.likes.filter((id: string) => validIds.has(id)) : [],
+          like_count: Array.isArray(p.likes) ? p.likes.filter((id: string) => validIds.has(id)).length : 0,
+          reactions: { "👍": ["user_admin1"] },
+          replies_preview: Array.isArray(p.replies_preview)
+            ? p.replies_preview.filter((r: any) => validIds.has(r.author_id))
+            : [],
+          reply_count: Array.isArray(p.replies_preview)
+            ? p.replies_preview.filter((r: any) => validIds.has(r.author_id)).length
+            : 0
+        }));
+    }
+
+    if (Array.isArray(db.org_units)) {
+      db.org_units.forEach((u: any) => {
+        if (u.head_id && !validIds.has(u.head_id)) {
+          u.head_id = "user_admin1";
+        }
+      });
+    }
+
+    if (Array.isArray(db.drive_shortcuts)) {
+      db.drive_shortcuts.forEach((s: any) => {
+        if (!validIds.has(s.owner_id)) s.owner_id = "user_admin1";
+        s.allowed_user_ids = [...validHumanIds];
+      });
+    }
+
+    if (!validIds.has(db.session_user_id)) {
+      db.session_user_id = "user_admin1";
+    }
+
+    db.prod_clean_v2 = true;
+    saveDbToFile();
+  }
+
   // Ensure default boards have department and all human workspace users in member_ids
   const humanUserIds = (db.users || [])
     .filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID)
@@ -277,7 +348,7 @@ async function startServer() {
     db.boards.forEach((b: any) => {
       if (!b.department) b.department = "Semua Divisi";
       const existingMembers = Array.isArray(b.member_ids)
-        ? b.member_ids.filter((id: string) => id !== CIRCLE_BOT_ID)
+        ? b.member_ids.filter((id: string) => id !== CIRCLE_BOT_ID && humanUserIds.includes(id))
         : [];
       b.member_ids = Array.from(new Set([...existingMembers, ...humanUserIds]));
     });
@@ -448,96 +519,27 @@ async function startServer() {
 
   // Ensure default posts exist so Beranda has active trending hashtags and feed content
   if (!Array.isArray(db.posts) || db.posts.length === 0) {
-    const nowIso = new Date().toISOString();
-    const h1 = new Date(Date.now() - 3600000 * 2).toISOString();
     const h2 = new Date(Date.now() - 3600000 * 5).toISOString();
-    const d1 = new Date(Date.now() - 86400000 * 1).toISOString();
     db.posts = [
       {
         id: "pst_init_1",
         author_id: "user_admin1",
         text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
         attachments: [],
-        likes: ["user_budi", "user_siti", "user_dian"],
-        like_count: 3,
-        liked: true,
-        reactions: { "🎉": ["user_budi", "user_siti"], "👍": ["user_admin1"] },
-        reply_count: 1,
-        replies_preview: [
-          {
-            id: "pst_init_1_rep_1",
-            author_id: "user_budi",
-            parent_id: "pst_init_1",
-            text: "Mantap! Tim Product siap kolaborasi bareng divisi Engineering dan Design 🚀 #project #sprint",
-            likes: [],
-            like_count: 0,
-            reactions: {},
-            created_at: h1
-          }
-        ],
-        created_at: h2
-      },
-      {
-        id: "pst_init_2",
-        author_id: "user_siti",
-        text: "Sprint Engineering minggu ini fokus pada integrasi sistem dan kestabilan performa. Rekan-rekan bisa cek board tugas masing-masing yaa 💻 #engineering #sprint #performance",
-        attachments: [],
-        likes: ["user_admin1", "user_dian"],
+        likes: ["user_admin1", "user_superadmin_saeful"],
         like_count: 2,
-        liked: false,
-        reactions: { "🔥": ["user_admin1", "user_dian"] },
+        liked: true,
+        reactions: { "🎉": ["user_superadmin_saeful"], "👍": ["user_admin1"] },
         reply_count: 0,
         replies_preview: [],
-        created_at: d1
-      },
-      {
-        id: "pst_init_3",
-        author_id: "user_dian",
-        text: "Design system dan UI components versi 2.0 sudah diperbarui di Figma. Silakan cek guideline warna dan tipografi terbaru 🎨 #design #uiux",
-        attachments: [],
-        likes: ["user_budi"],
-        like_count: 1,
-        liked: false,
-        reactions: { "❤️": ["user_budi"] },
-        reply_count: 0,
-        replies_preview: [],
-        created_at: nowIso
+        created_at: h2
       }
     ];
   }
 
-  // Ensure default tasks exist if empty
-  if (!Array.isArray(db.tasks) || db.tasks.length === 0) {
-    if (Array.isArray(INITIAL_TASKS) && INITIAL_TASKS.length > 0) {
-      db.tasks = JSON.parse(JSON.stringify(INITIAL_TASKS));
-    } else {
-      db.tasks = [
-        {
-          id: "tsk_init_1",
-          number_str: "TSK-001",
-          title: "Setup Google Workspace Integration (Calendar & Drive)",
-          description: "Connect Google Auth, Google Calendar events sync, and Google Drive file picker.",
-          status: "in_progress",
-          priority: "high",
-          assignee_id: "user_admin1",
-          project_id: "prj_1",
-          board_id: "brd_1",
-          label_ids: ["lbl_1", "lbl_2"],
-          deadline: new Date(Date.now() + 86400000 * 3).toISOString(),
-          created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-          updated_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-          comments: [],
-          checkpoints: [
-            { id: "c1", title: "OAuth Setup", done: true },
-            { id: "c2", title: "Calendar Sync", done: false }
-          ],
-          progress: 50,
-          archived: false,
-          requestor_ids: ["user_admin1"],
-          collaborator_ids: ["user_budi"]
-        }
-      ];
-    }
+  // Keep tasks array initialized without re-seeding dummy tasks when cleared
+  if (!Array.isArray(db.tasks)) {
+    db.tasks = [];
   }
 
   // Ensure default project exists if empty
@@ -548,9 +550,9 @@ async function startServer() {
         name: "Enterprise Workspace Migration",
         description: "Migrasi sistem kolaborasi internal ASLI RI ke platform terpadu.",
         status: "active",
-        progress: 60,
+        progress: 0,
         owner_id: "user_admin1",
-        member_ids: ["user_admin1", "user_budi", "user_siti", "user_dian"],
+        member_ids: ["user_admin1", "user_superadmin_saeful"],
         label_ids: ["lbl_1", "lbl_2"]
       }
     ];
@@ -559,8 +561,6 @@ async function startServer() {
   // Ensure default meetings exist if empty
   if (!Array.isArray(db.meetings) || db.meetings.length === 0) {
     const todayStr = new Date().toISOString().slice(0, 10);
-    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    const dayAfterStr = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10);
     db.meetings = [
       {
         id: "mtg_seed_1",
@@ -571,38 +571,10 @@ async function startServer() {
         end_time: "11:30",
         location: "Google Meet",
         meet_link: "https://meet.google.com/asli-sprint-sync",
-        attendee_ids: ["user_admin1", "user_budi", "user_siti", "user_dian"],
+        attendee_ids: ["user_admin1", "user_superadmin_saeful"],
         gcal_synced: false,
         created_by: "user_admin1",
         created_at: new Date(Date.now() - 86400000).toISOString()
-      },
-      {
-        id: "mtg_seed_2",
-        title: "Daily Standup Engineering & Product",
-        description: "Sinkronisasi progress harian, blockers, dan update implementasi API.",
-        date: tomorrowStr,
-        start_time: "09:30",
-        end_time: "10:00",
-        location: "Google Meet",
-        meet_link: "https://meet.google.com/asli-daily-standup",
-        attendee_ids: ["user_admin1", "user_budi", "user_siti"],
-        gcal_synced: false,
-        created_by: "user_budi",
-        created_at: new Date(Date.now() - 3600000 * 5).toISOString()
-      },
-      {
-        id: "mtg_seed_3",
-        title: "Design System & UI Review Session",
-        description: "Evaluasi token warna, komponen drag-and-drop, dan konsistensi mobile viewport.",
-        date: dayAfterStr,
-        start_time: "14:00",
-        end_time: "15:00",
-        location: "Meeting Room A / Google Meet",
-        meet_link: "https://meet.google.com/asli-design-sync",
-        attendee_ids: ["user_admin1", "user_dian", "user_siti"],
-        gcal_synced: false,
-        created_by: "user_dian",
-        created_at: new Date(Date.now() - 3600000 * 12).toISOString()
       }
     ];
   }
@@ -611,18 +583,15 @@ async function startServer() {
   if (!Array.isArray(db.org_units) || db.org_units.length === 0) {
     db.org_units = [
       { id: "unit_exec", name: "Board of Directors & Management", level: "Executive", head_id: "user_superadmin_saeful", parent_id: null },
-      { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_siti", parent_id: "unit_exec" },
-      { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_budi", parent_id: "unit_exec" },
+      { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
+      { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_superadmin_saeful", parent_id: "unit_exec" },
       { id: "unit_ops", name: "Operations & Infrastructure", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
       { id: "unit_mkt", name: "Marketing & Growth", level: "Department", head_id: null, parent_id: "unit_exec" }
     ];
 
     const mapping: Record<string, { unit: string, manager?: string }> = {
       "user_superadmin_saeful": { unit: "unit_exec" },
-      "user_admin1": { unit: "unit_ops", manager: "user_superadmin_saeful" },
-      "user_siti": { unit: "unit_eng", manager: "user_superadmin_saeful" },
-      "user_budi": { unit: "unit_prod", manager: "user_superadmin_saeful" },
-      "user_dian": { unit: "unit_prod", manager: "user_budi" }
+      "user_admin1": { unit: "unit_ops", manager: "user_superadmin_saeful" }
     };
     (db.users || []).forEach((u: any) => {
       if (mapping[u.user_id]) {
@@ -1319,22 +1288,22 @@ async function startServer() {
     } else if (mode === "message") {
       notif = createNotification({
         user_id: userId,
-        title: "Pesan Baru dari Budi Santoso",
+        title: "Pesan Baru dari Saeful",
         body: "Halo! Apakah dokumen spesifikasi proyek sudah siap di-review?",
         type: "dm",
         category: "messages",
         conversation_id: "conv_circle_user_admin1",
-        actor_id: "user_budi"
+        actor_id: "user_superadmin_saeful"
       });
     } else {
       notif = createNotification({
         user_id: userId,
         title: "Tugas Baru Ditugaskan",
-        body: "Budi menugaskan 'Review Dokumen Desain UI/UX' kepadamu.",
+        body: "Saeful menugaskan 'Review Dokumen Desain UI/UX' kepadamu.",
         type: "task_assigned",
         category: "tasks",
-        task_id: "tsk_init_1",
-        actor_id: "user_budi"
+        task_id: "",
+        actor_id: "user_superadmin_saeful"
       });
     }
 

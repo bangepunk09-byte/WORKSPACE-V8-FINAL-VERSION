@@ -106,7 +106,7 @@ export default function Dashboard() {
       const saved = localStorage.getItem("circle_cache_tasks");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {}
     return INITIAL_TASKS.slice(0, 8);

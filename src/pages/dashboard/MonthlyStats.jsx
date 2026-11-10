@@ -16,10 +16,7 @@ const seg = (on) => `h-9 rounded-xl px-3.5 text-sm font-semibold transition-colo
 
 const FALLBACK_PEOPLE = [
   { user_id: "user_admin1", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 },
-  { user_id: "user_budi", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 },
-  { user_id: "user_siti", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 },
-  { user_id: "user_dian", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 },
-  { user_id: "user_raditya", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 }
+  { user_id: "user_superadmin_saeful", status: "optimal", active: 0, share: 0, day_deadlines: 0, tasks: [], more: 0 }
 ];
 
 const INITIAL_DATA = {

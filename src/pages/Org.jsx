@@ -122,8 +122,8 @@ function Table({ units, reload, canMove }) {
 
 const INITIAL_UNITS = [
   { id: "unit_exec", name: "Board of Directors & Management", level: "Executive", head_id: "user_superadmin_saeful", parent_id: null },
-  { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_siti", parent_id: "unit_exec" },
-  { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_budi", parent_id: "unit_exec" },
+  { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
+  { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_superadmin_saeful", parent_id: "unit_exec" },
   { id: "unit_ops", name: "Operations & Infrastructure", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
   { id: "unit_mkt", name: "Marketing & Growth", level: "Department", head_id: null, parent_id: "unit_exec" }
 ];

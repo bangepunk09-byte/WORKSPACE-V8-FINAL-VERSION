@@ -134,26 +134,13 @@ const DEFAULT_POSTS = [
     author_id: "user_admin1",
     text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
     attachments: [],
-    likes: ["user_budi", "user_siti", "user_dian"],
-    like_count: 3,
-    liked: true,
-    reactions: { "🎉": ["user_budi", "user_siti"], "👍": ["user_admin1"] },
-    reply_count: 1,
-    replies_preview: [],
-    created_at: new Date(Date.now() - 3600000 * 5).toISOString()
-  },
-  {
-    id: "pst_init_2",
-    author_id: "user_siti",
-    text: "Sprint Engineering minggu ini fokus pada integrasi sistem dan kestabilan performa. Rekan-rekan bisa cek board tugas masing-masing yaa 💻 #engineering #sprint #performance",
-    attachments: [],
-    likes: ["user_admin1", "user_dian"],
+    likes: ["user_admin1", "user_superadmin_saeful"],
     like_count: 2,
-    liked: false,
-    reactions: { "🔥": ["user_admin1", "user_dian"] },
+    liked: true,
+    reactions: { "🎉": ["user_superadmin_saeful"], "👍": ["user_admin1"] },
     reply_count: 0,
     replies_preview: [],
-    created_at: new Date(Date.now() - 86400000 * 1).toISOString()
+    created_at: new Date(Date.now() - 3600000 * 5).toISOString()
   }
 ];
 

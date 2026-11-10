@@ -145,7 +145,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
       const cached = localStorage.getItem("circle_tasks_cache");
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           GLOBAL_TASKS_CACHE = parsed;
           return parsed;
         }

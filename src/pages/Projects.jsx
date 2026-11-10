@@ -65,11 +65,11 @@ const INITIAL_PROJECTS = [
     name: "Enterprise Workspace Migration",
     description: "Migrasi sistem kolaborasi internal ASLI RI ke platform terpadu.",
     status: "active",
-    progress: 60,
-    task_done: 12,
-    task_total: 20,
+    progress: 0,
+    task_done: 0,
+    task_total: 0,
     owner_id: "user_admin1",
-    member_ids: ["user_admin1", "user_budi", "user_siti", "user_dian"]
+    member_ids: ["user_admin1", "user_superadmin_saeful"]
   }
 ];
 
