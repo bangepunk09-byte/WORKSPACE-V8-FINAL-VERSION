@@ -272,14 +272,13 @@ export default function Dashboard() {
   // Data for Column 2: Today's Priority Tasks
   const todayTasks = tasks.slice(0, 3);
 
-  // Data for Column 3: Active tech channel
-  const techGroup = conversations.find(
-    (c) => c.type === "group" && (c.name?.toLowerCase().includes("tech") || c.name?.toLowerCase().includes("engineering"))
-  ) || {
-    id: "grp_tech",
-    name: "tech-engineering",
-    last_message_preview: "Cluster staging sudah ter-update...",
-    unread: 2
+  // Data for Column 3: Last Conversation
+  const sortedConversations = [...conversations].sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+  const lastConversation = sortedConversations[0] || {
+    id: "conv_1",
+    name: "General",
+    last_message_preview: "Belum ada pesan terbaru",
+    unread: 0
   };
 
   // Density Spacing Presets (Extra spacious by default to prevent cramping)
@@ -618,24 +617,28 @@ export default function Dashboard() {
           );
         })()}
 
-        {/* Feed Card 2: Active Channel Notification */}
-        {conversations.length > 0 && techGroup && (
+        {/* Feed Card 2: Last Conversation */}
+        {lastConversation && (
           <div
-            onClick={() => navigate("/messages")}
+            onClick={() => navigate(`/messages/${lastConversation.id}`)}
             className="mt-4 flex cursor-pointer items-center justify-between gap-3.5 rounded-2xl border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/30 p-4 transition-all hover:border-blue-400 hover:shadow-sm"
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-xs font-extrabold text-white shadow-xs">
-                #
+                {lastConversation.type === "dm" ? "💬" : "#"}
               </div>
               <div className="min-w-0">
-                <p className="font-bold text-sm text-ink truncate">#{techGroup.name}</p>
-                <p className="text-xs text-sub truncate mt-0.5">{techGroup.last_message_preview || "Percakapan tim"}</p>
+                <p className="font-bold text-sm text-ink truncate">
+                  {lastConversation.type === "dm"
+                    ? (userMap?.[(lastConversation.member_ids || []).find((id) => id !== me?.user_id)]?.name || lastConversation.name || "Direct Message")
+                    : `#${lastConversation.name}`}
+                </p>
+                <p className="text-xs text-sub truncate mt-0.5">{lastConversation.last_message_preview || "Belum ada pesan"}</p>
               </div>
             </div>
-            {techGroup.unread > 0 && (
+            {lastConversation.unread > 0 && (
               <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-xs shrink-0">
-                {techGroup.unread} Baru
+                {lastConversation.unread} Baru
               </span>
             )}
           </div>

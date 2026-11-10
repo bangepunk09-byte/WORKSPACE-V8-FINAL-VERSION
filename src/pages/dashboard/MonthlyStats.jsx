@@ -198,7 +198,7 @@ function Personnel({ data }) {
       </div>
       {depts.length > 0 && <div className="mt-5 flex flex-wrap items-center gap-2" data-testid="personnel-division-filter">
         <span className="flex items-center gap-1.5 text-sm text-sub"><Filter size={14} />Divisi:</span>
-        {[["", "Semua Divisi"], ...depts.map((d) => [d, d])].map(([k, l]) => <button key={k || "all"} onClick={() => setDiv(k)} className={`h-10 rounded-2xl px-4 text-sm font-semibold transition-colors ${div === k ? "bg-ink text-[var(--c-surface)]" : "bg-surface2 text-ink hover:bg-surface2/70"}`} data-testid={`personnel-div-${k ? k.replace(/\s/g, "-") : "all"}`}>{l}</button>)}
+        {[["", "Semua Divisi"], ...depts.map((d) => [d, d])].map(([k, l]) => <button key={k || "all"} onClick={() => setDiv(k)} className={`h-10 rounded-2xl px-4 text-sm font-semibold transition-colors cursor-pointer ${div === k ? "bg-brand text-white shadow-xs" : "bg-surface2 text-ink hover:bg-surface2/70"}`} data-testid={`personnel-div-${k ? k.replace(/\s/g, "-") : "all"}`}>{l}</button>)}
       </div>}
       <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{(all ? people : people.slice(0, 6)).map((p) => <PersonCard key={p.user_id} p={p} />)}</div>
       {people.length > 6 && <button onClick={() => setAll(!all)} className="mt-5 w-full rounded-2xl border py-3 text-sm font-semibold text-sub hover:text-ink transition-colors" data-testid="personnel-toggle-all">{all ? "Tampilkan lebih sedikit" : `Lihat semua personel (${people.length})`}</button>}

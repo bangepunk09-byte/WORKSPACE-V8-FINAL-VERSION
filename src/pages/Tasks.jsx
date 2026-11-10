@@ -153,7 +153,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     } catch {}
     return INITIAL_TASKS;
   });
-  const [loading, setLoading] = useState(!tasks.length);
+  const [loading] = useState(false);
   const jsonInputRef = useRef(null);
   const csvInputRef = useRef(null);
 
@@ -217,9 +217,8 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   useEffect(() => { loadBoards(); }, [loadBoards]);
   useEffect(() => subscribe((e) => e.type === "tasks:changed" && loadBoards()), [subscribe, loadBoards]);
   const pickBoard = (id) => { setBoardId(id); setSelected([]); if (id) params.set("board", id); else params.delete("board"); setParams(params); };
-  const newTask = (extra = {}) => (boards?.length ? setCreate({ board_id: boardId, ...extra }) : toast.error("Kamu belum diundang ke board mana pun"));
-  const load = useCallback((silent = false) => {
-    if (!silent) setLoading(true);
+  const newTask = (extra = {}) => setCreate({ board_id: boardId || boards?.[0]?.id || "brd_1", ...extra });
+  const load = useCallback(() => {
     return api.get("/tasks", { params: query() }).then((r) => {
       if (Array.isArray(r.data)) {
         setTasks(r.data);
@@ -228,9 +227,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           try { localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data)); } catch {}
         }
       }
-    }).catch(() => {}).finally(() => {
-      if (!silent) setLoading(false);
-    });
+    }).catch(() => {});
   }, [query, f, saved, boardId, projectId]);
 
   const updateTaskLocally = useCallback((taskId, patch) => {
@@ -538,21 +535,29 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           <span className="px-2 text-sm font-semibold">{selected.length} selected</span>
           <select onChange={(e) => e.target.value && bulk({ status: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid="bulk-status"><option value="">Set status…</option>{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select>
           <select onChange={(e) => e.target.value && bulk({ priority: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid="bulk-priority"><option value="">Set priority…</option>{Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}</select>
-          <select onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid={`bulk-assignee`}><option value="">Assign to…</option>{users.map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>
+          <select onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid={`bulk-assignee`}><option value="">Assign to…</option>{users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant").map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>
           <button onClick={() => bulk({ archived: saved !== "archived" })} className="h-9 rounded-full border px-3 text-sm font-medium" data-testid="bulk-archive">{saved === "archived" ? "Unarchive" : "Archive"}</button>
           <button onClick={() => exp("csv", selected)} className="h-9 rounded-full border px-3 text-sm font-medium" data-testid="bulk-export">Export</button>
           <button onClick={() => setSelected([])} className="ml-auto text-sub" aria-label="Clear selection"><X size={16} /></button>
         </div>
       )}
-        <div key={view === "archive" || saved === "archived" ? "archive" : view} className="min-h-[350px]">
-          {loading ? (
-            <div className="flex py-20 items-center justify-center"><Spinner label="Tasks" /></div>
-          ) : (view === "archive" || saved === "archived") ? <ArchiveView tasks={tasks} onOpen={open} reload={load} projects={projects} />
+        <div className="min-h-[350px]">
+          {(view === "archive" || saved === "archived") ? <ArchiveView tasks={tasks} onOpen={open} reload={load} projects={projects} />
           : view === "board" ? <Board tasks={tasks} onOpen={open} onNew={(status) => newTask({ status })} reload={load} onMoveTask={updateTaskLocally} />
           : view === "list" ? <ListView tasks={tasks} projects={projects} onOpen={open} selected={selected} setSelected={setSelected} reload={load} groupBy={groupBy} boardId={boardId} />
           : view === "timeline" ? <Timeline tasks={tasks} onOpen={open} /> : <Calendar tasks={tasks} onOpen={open} />}
         </div>
-      <TaskCreate open={!!create} onOpenChange={(v) => !v && setCreate(null)} defaults={{ ...create, project_id: projectId }} onCreated={load} />
+      <TaskCreate
+        open={!!create}
+        onOpenChange={(v) => !v && setCreate(null)}
+        defaults={{ ...create, project_id: projectId }}
+        onCreated={(newT) => {
+          if (newT?.id) {
+            setTasks((prev) => [newT, ...prev.filter((x) => x.id !== newT.id)]);
+          }
+          load(true);
+        }}
+      />
       <TaskDetail id={openId} onClose={close} onChanged={load} />
     </div>
   );

@@ -11,21 +11,21 @@ import { playSound } from "../../lib/sound";
 const blank = (me, d = {}) => ({
   title: "",
   description: "",
-  requestor_ids: me?.user_id ? [me.user_id] : [],
+  requestor_ids: me?.user_id ? [me.user_id] : ["user_admin1"],
   assignee_id: null,
   assignee_ids: [],
   priority: "medium",
   deadline_date: "",
   deadline_time: "",
   start_date: "",
-  project_id: d.project_id || "",
-  department: me.department || "",
-  board_id: d.board_id || "",
-  label_ids: d.label_ids || [],
+  project_id: d?.project_id || "",
+  department: me?.department || "",
+  board_id: d?.board_id || "brd_1",
+  label_ids: d?.label_ids || [],
   item_type: null,
   link_url: "",
   collaborator_ids: [],
-  checkpoints: d.checkpoints || [],
+  checkpoints: d?.checkpoints || [],
   checklist: [],
   subtasks: [],
   links: [],
@@ -34,7 +34,7 @@ const blank = (me, d = {}) => ({
   card_color: null,
   card_style: "accent",
   custom: {},
-  status: d.status
+  status: d?.status || "todo"
 });
 
 function Row({ label, children, hint }) {
@@ -232,8 +232,8 @@ function CheckpointCreator({ checkpoints = [], onChange, members }) {
 }
 
 export default function TaskCreate({ open, onOpenChange, preset, defaults, onCreated }) {
-  const { me, ws, users } = useApp();
-  const [f, setF] = useState(blank(me));
+  const { me, ws, users, statuses } = useApp();
+  const [f, setF] = useState(() => blank(me, defaults));
   const [projects, setProjects] = useState([]);
   const [boards, setBoards] = useState([]);
   const [link, setLink] = useState("");
@@ -241,8 +241,28 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
   const [busy, setBusy] = useState(false);
   const setAtt = (fn) => setF((x) => ({ ...x, attachments: fn(x.attachments) }));
   const { pick, input } = useUploader(setAtt);
-  useEffect(() => { if (open) { setF({ ...blank(me, defaults), ...(preset || {}) }); setMore(false); api.get("/projects").then((r) => setProjects(r.data)); api.get("/boards").then((r) => { setBoards(r.data); setF((x) => ({ ...x, board_id: x.board_id || r.data[0]?.id || "" })); }); } }, [open]); // eslint-disable-line
-  const members = boards.find((b) => b.id === f.board_id)?.member_ids || [];
+
+  const humanUsers = (users || []).filter(
+    (u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+  );
+
+  useEffect(() => {
+    if (open) {
+      const initial = { ...blank(me, defaults), ...(preset || {}) };
+      if (!initial.status) initial.status = statuses?.[0]?.key || "todo";
+      setF(initial);
+      setMore(false);
+      api.get("/projects").then((r) => setProjects(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+      api.get("/boards").then((r) => {
+        const list = Array.isArray(r.data) ? r.data : [];
+        setBoards(list);
+        setF((x) => ({ ...x, board_id: x.board_id || list[0]?.id || "brd_1" }));
+      }).catch(() => {});
+    }
+  }, [open]); // eslint-disable-line
+
+  const boardMemberIds = boards.find((b) => b.id === f.board_id)?.member_ids || [];
+  const members = boardMemberIds.length > 0 ? boardMemberIds : humanUsers.map((u) => u.user_id);
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v?.target ? v.target.value : v }));
 
   const toggleRequestor = (uid) => {
@@ -257,28 +277,32 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
 
   const submit = async (e) => {
     e?.preventDefault();
-    if (!f.title.trim()) return toast.error("Task title is required");
+    if (!f.title.trim()) return toast.error("Judul tugas wajib diisi");
     setBusy(true);
     try {
       const assigneeIds = Array.isArray(f.assignee_ids) && f.assignee_ids.length
         ? f.assignee_ids.filter(Boolean)
         : (f.assignee_id ? [f.assignee_id] : []);
       const primaryAssigneeId = assigneeIds[0] || null;
+      const myUserId = me?.user_id || "user_admin1";
+      const reqIds = f.requestor_ids && f.requestor_ids.length ? f.requestor_ids : [myUserId];
 
       const { deadline_date, deadline_time, ...rest } = f;
       const { data } = await api.post("/tasks", {
         ...rest,
+        status: f.status || statuses?.[0]?.key || "todo",
+        board_id: f.board_id || boards[0]?.id || "brd_1",
         assignee_id: primaryAssigneeId,
         assignee_ids: assigneeIds,
-        requestor_ids: f.requestor_ids && f.requestor_ids.length ? f.requestor_ids : [me.user_id],
-        reviewer_ids: f.requestor_ids && f.requestor_ids.length ? f.requestor_ids : [me.user_id],
+        requestor_ids: reqIds,
+        reviewer_ids: reqIds,
         project_id: f.project_id || null,
         deadline: toDeadline(deadline_date, deadline_time),
         deadline_has_time: !!deadline_time,
         start_date: f.start_date || null,
         estimate: f.estimate || null
       });
-      toast.success(`Task ${data.number_str} created`);
+      toast.success(`Tugas ${data.number_str || ""} berhasil dibuat!`);
       playSound("task_create");
       onOpenChange(false);
       onCreated?.(data);
@@ -289,23 +313,23 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto bg-surface p-0 sm:max-w-2xl" data-testid="task-create-panel">
         <form onSubmit={submit} className="flex min-h-full flex-col">
-          <SheetHeader className="border-b p-5"><SheetTitle>New task</SheetTitle></SheetHeader>
+          <SheetHeader className="border-b p-5"><SheetTitle>Buat Tugas Baru</SheetTitle></SheetHeader>
           <div className="flex-1 space-y-4 p-5">
-            <input autoFocus value={f.title} onChange={set("title")} placeholder="Task title" className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-sub" data-testid="task-title-input" />
+            <input autoFocus value={f.title} onChange={set("title")} placeholder="Judul tugas..." className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-sub" data-testid="task-title-input" />
             <RichEditor value={f.description} onChange={set("description")} testid="task-description-editor" />
             
             {/* Multiple Requestors with Auto Reviewers */}
             <Row label="Requestor" hint="Reviewer otomatis dari requestor">
               <div className="space-y-2">
                 <div className="flex flex-wrap gap-1.5" data-testid="task-requestor-list">
-                  {users.map((u) => {
+                  {humanUsers.map((u) => {
                     const isSelected = (f.requestor_ids || []).includes(u.user_id);
                     return (
                       <button
                         type="button"
                         key={u.user_id}
                         onClick={() => toggleRequestor(u.user_id)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
                           isSelected
                             ? "border-[var(--c-accent)] bg-brand text-white shadow-sm"
                             : "border-slate-200 bg-surface hover:bg-surface2 text-slate-700 dark:text-slate-200"
@@ -313,7 +337,7 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
                         data-testid={`requestor-toggle-${u.user_id}`}
                       >
                         <span>{u.name.split(" ")[0]}</span>
-                        {u.user_id === me.user_id && <span className="opacity-80 text-[10px]">(You)</span>}
+                        {u.user_id === me?.user_id && <span className="opacity-80 text-[10px]">(You)</span>}
                         {isSelected && <span>✓</span>}
                       </button>
                     );
@@ -325,8 +349,39 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
               </div>
             </Row>
 
-            <Row label="Board"><select value={f.board_id || ""} onChange={(e) => setF((x) => ({ ...x, board_id: e.target.value, assignee_id: null, assignee_ids: [] }))} className={inp} data-testid="task-board-select">{!boards.length && <option value="">Belum ada board</option>}{boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Row>
-            <Row label="Assignee" hint="Bisa assign 2 orang atau lebih (otomatis tercatat bersama)"><MultiUserSelect value={f.assignee_ids || (f.assignee_id ? [f.assignee_id] : [])} onChange={(ids) => setF((prev) => ({ ...prev, assignee_ids: ids, assignee_id: ids[0] || null }))} ids={members} testid="task-assignee-select" /></Row>
+            <Row label="Board">
+              <select
+                value={f.board_id || ""}
+                onChange={(e) => setF((x) => ({ ...x, board_id: e.target.value }))}
+                className={inp}
+                data-testid="task-board-select"
+              >
+                {!boards.length && <option value="brd_1">General Board</option>}
+                {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </Row>
+
+            <Row label="Status">
+              <select
+                value={f.status || "todo"}
+                onChange={set("status")}
+                className={inp}
+                data-testid="task-status-select"
+              >
+                {(statuses && statuses.length ? statuses : [{ key: "todo", name: "To Do" }]).map((s) => (
+                  <option key={s.key} value={s.key}>{s.name}</option>
+                ))}
+              </select>
+            </Row>
+
+            <Row label="Assignee" hint="Klik nama di bawah atau pilih PIC (bisa >1 orang)">
+              <MultiUserSelect
+                value={f.assignee_ids || (f.assignee_id ? [f.assignee_id] : [])}
+                onChange={(ids) => setF((prev) => ({ ...prev, assignee_ids: ids, assignee_id: ids[0] || null }))}
+                ids={members}
+                testid="task-assignee-select"
+              />
+            </Row>
             <Row label="Priority"><PrioritySelect value={f.priority} onChange={set("priority")} testid="task-priority-select" /></Row>
             <Row label="Deadline"><div className="flex gap-2"><input type="date" value={f.deadline_date} onChange={set("deadline_date")} className={inp} data-testid="task-deadline-input" /><input type="time" value={f.deadline_time} onChange={set("deadline_time")} className={`${inp} w-32`} data-testid="task-deadline-time-input" /></div></Row>
 
@@ -346,15 +401,15 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
             {!more ? <button type="button" onClick={() => setMore(true)} className="text-sm font-semibold text-sub hover:text-ink" data-testid="task-more-fields-btn">+ More fields (dates, project, checklist, links…)</button> : <>
               <Row label="Start date"><input type="date" value={f.start_date} onChange={set("start_date")} className={inp} data-testid="task-start-input" /></Row>
               <Row label="Project"><select value={f.project_id} onChange={set("project_id")} className={inp} data-testid="task-project-select"><option value="">No project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Row>
-              <Row label="Department"><input value={f.department} onChange={set("department")} className={inp} list="depts" data-testid="task-department-input" /><datalist id="depts">{[...new Set(users.map((u) => u.department).filter(Boolean))].map((d) => <option key={d} value={d} />)}</datalist></Row>
-              <Row label="Collaborators"><div className="flex flex-wrap gap-1">{users.map((u) => { const on = f.collaborator_ids.includes(u.user_id); return <button type="button" key={u.user_id} onClick={() => set("collaborator_ids")(on ? f.collaborator_ids.filter((x) => x !== u.user_id) : [...f.collaborator_ids, u.user_id])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-[var(--c-accent)] bg-soft-red" : ""}`}>{u.name.split(" ")[0]}</button>; })}</div></Row>
+              <Row label="Department"><input value={f.department} onChange={set("department")} className={inp} list="depts" data-testid="task-department-input" /><datalist id="depts">{[...new Set(humanUsers.map((u) => u.department).filter(Boolean))].map((d) => <option key={d} value={d} />)}</datalist></Row>
+              <Row label="Collaborators"><div className="flex flex-wrap gap-1">{humanUsers.map((u) => { const on = f.collaborator_ids.includes(u.user_id); return <button type="button" key={u.user_id} onClick={() => set("collaborator_ids")(on ? f.collaborator_ids.filter((x) => x !== u.user_id) : [...f.collaborator_ids, u.user_id])} className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-[var(--c-accent)] bg-soft-red" : ""}`}>{u.name.split(" ")[0]}</button>; })}</div></Row>
               <Row label="Checklist"><ListEditor items={f.checklist} onChange={set("checklist")} placeholder="Add checklist item" testid="task-checklist-editor" /></Row>
               <Row label="Subtasks"><ListEditor items={f.subtasks} onChange={set("subtasks")} field="title" placeholder="Add subtask" testid="task-subtasks-editor" /></Row>
               <Row label="Reference links"><div>{f.links.map((l, i) => <div key={`${l}-${i}`} className="flex items-center gap-2 py-0.5 text-sm"><Link2 size={13} className="text-sub" /><a href={l} target="_blank" rel="noreferrer" className="flex-1 truncate text-brand">{l}</a><button type="button" onClick={() => set("links")(f.links.filter((x) => x !== l))} aria-label="Remove link"><X size={13} /></button></div>)}
                 <div className="flex gap-1"><input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" className={inp} data-testid="task-link-input" /><button type="button" onClick={() => { if (/^https?:\/\//.test(link)) { set("links")([...f.links, link]); setLink(""); } else toast.error("Enter a valid URL"); }} className="rounded-xl border px-3 text-sm" data-testid="task-add-link-btn">Add</button></div></div></Row>
               <Row label="Estimated effort"><input value={f.estimate} onChange={set("estimate")} placeholder="e.g. 4h, 2 days" className={inp} /></Row>
               <Row label="Card color"><ColorPicker value={f.card_color} onChange={set("card_color")} style={f.card_style} onStyle={set("card_style")} /></Row>
-              {(ws.task_fields || []).map((cf) => <Row key={cf.key} label={cf.name}><input value={f.custom[cf.key] || ""} onChange={(e) => set("custom")({ ...f.custom, [cf.key]: e.target.value })} className={inp} /></Row>)}
+              {(ws?.task_fields || []).map((cf) => <Row key={cf.key} label={cf.name}><input value={f.custom[cf.key] || ""} onChange={(e) => set("custom")({ ...f.custom, [cf.key]: e.target.value })} className={inp} /></Row>)}
             </>}
           </div>
           <div className="sticky bottom-0 flex items-center gap-3 border-t bg-surface px-6 py-5 pb-8 sm:px-6 sm:py-5 sm:pb-7 shadow-lg">

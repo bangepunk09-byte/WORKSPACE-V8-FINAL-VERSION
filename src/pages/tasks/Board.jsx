@@ -338,8 +338,12 @@ export default function Board({ tasks, onOpen, onNew, reload, onMoveTask }) {
       style={{ "--cols": statuses.length }}
       data-testid="task-board"
     >
-      {statuses.map((s) => {
-        const col = tasks.filter((t) => t.status === s.key);
+      {statuses.map((s, idx) => {
+        const col = tasks.filter((t) => {
+          if (t.status === s.key) return true;
+          if (idx === 0 && (!t.status || !statuses.some((st) => st.key === t.status))) return true;
+          return false;
+        });
         const isColumnOver = over === s.key;
         return (
           <div

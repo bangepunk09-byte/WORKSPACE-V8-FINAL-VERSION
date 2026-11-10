@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Settings as Cog, Sun, Moon, Monitor, Upload, Download, RotateCcw, FileSpreadsheet, Search, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
+import { api } from "../lib/api";
 import { PageHeader } from "../components/common";
 import { Switch } from "../components/ui/switch";
 import ThemeEditor from "./settings/ThemeEditor";
@@ -19,10 +20,10 @@ function Appearance() {
   return (
     <div className="space-y-5">
       <Card title="Mode" testid="theme-mode-card">
-        <div className="grid grid-cols-3 gap-2">{[["light", "Light", Sun], ["dark", "Dark", Moon], ["system", "System", Monitor]].map(([k, l, I]) => <button key={k} onClick={() => savePrefs({ theme_mode: k })} className={`flex h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border text-sm font-semibold ${(prefs.theme_mode || "light") === k ? "border-[var(--c-accent)] bg-soft-red" : ""}`} data-testid={`theme-mode-${k}`}><I size={20} />{l}</button>)}</div>
+        <div className="grid grid-cols-3 gap-2">{[["light", "Light", Sun], ["dark", "Dark", Moon], ["system", "System", Monitor]].map(([k, l, I]) => <button type="button" key={k} onClick={() => { savePrefs({ theme_mode: k }); toast.success(`Mode tampilan diubah ke ${l}`); }} className={`flex h-20 flex-col items-center justify-center gap-1.5 rounded-2xl border text-sm font-semibold ${(prefs.theme_mode || "light") === k ? "border-[var(--c-accent)] bg-soft-red" : ""}`} data-testid={`theme-mode-${k}`}><I size={20} />{l}</button>)}</div>
       </Card>
       <Card title="Theme editor" testid="theme-editor-card">
-        {isAdmin && <div className="mb-4 flex rounded-full border p-1 text-sm font-semibold w-fit">{[["personal", "Personal theme"], ["workspace", "Workspace theme"]].map(([k, l]) => <button key={k} onClick={() => setScope(k)} className={`rounded-full px-4 py-1.5 ${scope === k ? "bg-ink text-[var(--c-surface)]" : "text-sub"}`} data-testid={`theme-scope-${k}`}>{l}</button>)}</div>}
+        {isAdmin && <div className="mb-4 flex rounded-full border p-1 text-sm font-semibold w-fit">{[["personal", "Personal theme"], ["workspace", "Workspace theme"]].map(([k, l]) => <button type="button" key={k} onClick={() => setScope(k)} className={`rounded-full px-4 py-1.5 transition-colors cursor-pointer ${scope === k ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink"}`} data-testid={`theme-scope-${k}`}>{l}</button>)}</div>}
         <ThemeEditor key={scope} scope={scope} />
       </Card>
     </div>
@@ -82,7 +83,7 @@ function NotificationPrefs() {
     try {
       await api.post("/notifications/test", { mode });
     } catch (err) {
-      console.warn("Server test notification notification warning:", err);
+      console.warn("Server test notification warning:", err);
     } finally {
       setTesting(false);
       toast.success("Popup notifikasi berhasil dimunculkan!");
@@ -127,8 +128,18 @@ function NotificationPrefs() {
       </Card>
 
       <Card title="Notification preferences" testid="notification-prefs">
-        <div className="divide-y">{CATS.map(([k, l]) => <label key={k} className="flex items-center justify-between py-3 text-sm">{l}<Switch checked={n[k] !== false} onCheckedChange={(v) => savePrefs({ notifications: { ...n, [k]: v } })} data-testid={`notif-pref-${k}`} /></label>)}</div>
-        <p className="mt-3 text-xs text-sub">Mute individual groups from the conversation details panel.</p>
+        <div className="divide-y">{CATS.map(([k, l]) => <label key={k} className="flex items-center justify-between py-3 text-sm">{l}<Switch checked={n[k] !== false} onCheckedChange={(v) => { savePrefs({ notifications: { ...n, [k]: v } }); toast.success("Preferensi notifikasi diperbarui"); }} data-testid={`notif-pref-${k}`} /></label>)}</div>
+        <div className="mt-4 flex items-center justify-between border-t pt-3">
+          <p className="text-xs text-sub">Mute individual groups from the conversation details panel.</p>
+          <button
+            type="button"
+            onClick={() => { savePrefs({ notifications: n }); toast.success("Preferensi notifikasi berhasil disimpan!"); }}
+            className="btn-accent h-9 px-4 text-xs font-semibold"
+            data-testid="save-notif-prefs-btn"
+          >
+            Simpan Preferensi
+          </button>
+        </div>
       </Card>
     </div>
   );
@@ -250,7 +261,7 @@ function CopywritingSettings() {
             type="button"
             disabled={saving}
             onClick={handleSaveDraft}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-ink text-[var(--c-surface)] px-4 py-2 text-xs font-bold shadow-sm hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-brand text-white px-4 py-2 text-xs font-bold shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
             data-testid="save-copywriting-btn"
           >
             <Check size={14} /> {saving ? "Menyimpan..." : "Simpan Copywriting"}

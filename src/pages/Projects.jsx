@@ -59,41 +59,6 @@ function ProjectDialog({ open, onOpenChange, project, onSaved }) {
   );
 }
 
-function Detail({ pid }) {
-  const { userMap } = useApp();
-  const [p, setP] = useState(null);
-  const [edit, setEdit] = useState(false);
-  const navigate = useNavigate();
-  const load = () => api.get(`/projects/${pid}`).then((r) => setP(r.data)).catch(() => navigate("/projects"));
-  useEffect(() => { load(); }, [pid]); // eslint-disable-line
-  if (!p) return <Spinner />;
-  return (
-    <div className="animate-subpage-enter" data-testid="project-detail">
-      <button onClick={() => navigate("/projects")} className="mb-4 flex items-center gap-1 text-sm font-semibold text-sub"><ArrowLeft size={15} />All projects</button>
-      <div className="card mb-6 p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="project-title">{p.name}</h1>
-            <p className="mt-1 text-sm text-sub">{p.description}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-sub">
-              <span className="rounded-full bg-soft-green px-2.5 py-1 font-semibold capitalize text-ink">{(p.status || "active").replace("_", " ")}</span>
-              <span className="flex items-center gap-1"><Avatar user={userMap[p.owner_id]} size={18} showStatus={false} />Owner: {userMap[p.owner_id]?.name}</span>
-              {p.deadline && <span className="flex items-center gap-1"><Calendar size={12} />{fmtDate(p.start_date, "d MMM")} – {fmtDate(p.deadline, "d MMM yyyy")}</span>}
-              {p.location && <span className="flex items-center gap-1"><MapPin size={12} />{p.location}</span>}
-              <Labels ids={p.label_ids || []} small max={5} />
-            </div>
-          </div>
-          <div className="flex gap-2">{p.conversation_id && <button onClick={() => navigate(`/messages/${p.conversation_id}`)} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="project-chat-btn"><MessageCircle size={15} />Chat</button>}<button onClick={() => setEdit(true)} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="project-edit-btn">Edit</button></div>
-        </div>
-        <div className="mt-5"><div className="flex justify-between text-sm"><span className="font-semibold">Progress</span><span data-testid="project-progress">{p.task_done || 0}/{p.task_total || 0} tasks · {p.progress || 0}%</span></div><div className="mt-2 h-2.5 rounded-full bg-surface2"><div className="h-full rounded-full bg-brand transition-all" style={{ width: `${p.progress || 0}%` }} /></div></div>
-        <div className="mt-4"><AvatarStack ids={p.member_ids || []} max={8} /></div>
-      </div>
-      <TaskWorkspace projectId={pid} compactHeader />
-      <ProjectDialog open={edit} onOpenChange={setEdit} project={p} onSaved={load} />
-    </div>
-  );
-}
-
 const INITIAL_PROJECTS = [
   {
     id: "prj_1",
@@ -109,6 +74,60 @@ const INITIAL_PROJECTS = [
 ];
 
 let GLOBAL_PROJECTS_CACHE = null;
+
+function getInitialProject(pid) {
+  if (GLOBAL_PROJECTS_CACHE && Array.isArray(GLOBAL_PROJECTS_CACHE)) {
+    const found = GLOBAL_PROJECTS_CACHE.find((x) => x.id === pid);
+    if (found) return found;
+  }
+  try {
+    const cached = localStorage.getItem("circle_projects_cache");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      const found = Array.isArray(parsed) && parsed.find((x) => x.id === pid);
+      if (found) return found;
+    }
+  } catch {}
+  return INITIAL_PROJECTS.find((x) => x.id === pid) || INITIAL_PROJECTS[0];
+}
+
+function Detail({ pid }) {
+  const { userMap } = useApp();
+  const [p, setP] = useState(() => getInitialProject(pid));
+  const [edit, setEdit] = useState(false);
+  const navigate = useNavigate();
+  const load = () => api.get(`/projects/${pid}`).then((r) => setP(r.data)).catch(() => {});
+  useEffect(() => {
+    setP(getInitialProject(pid));
+    load();
+  }, [pid]); // eslint-disable-line
+  const activeP = p || getInitialProject(pid);
+  return (
+    <div className="animate-subpage-enter" data-testid="project-detail">
+      <button onClick={() => navigate("/projects")} className="mb-4 flex items-center gap-1 text-sm font-semibold text-sub"><ArrowLeft size={15} />All projects</button>
+      <div className="card mb-6 p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" data-testid="project-title">{activeP.name}</h1>
+            <p className="mt-1 text-sm text-sub">{activeP.description}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-sub">
+              <span className="rounded-full bg-soft-green px-2.5 py-1 font-semibold capitalize text-ink">{(activeP.status || "active").replace("_", " ")}</span>
+              <span className="flex items-center gap-1"><Avatar user={userMap[activeP.owner_id]} size={18} showStatus={false} />Owner: {userMap[activeP.owner_id]?.name}</span>
+              {activeP.deadline && <span className="flex items-center gap-1"><Calendar size={12} />{fmtDate(activeP.start_date, "d MMM")} – {fmtDate(activeP.deadline, "d MMM yyyy")}</span>}
+              {activeP.location && <span className="flex items-center gap-1"><MapPin size={12} />{activeP.location}</span>}
+              <Labels ids={activeP.label_ids || []} small max={5} />
+            </div>
+          </div>
+          <div className="flex gap-2">{activeP.conversation_id && <button onClick={() => navigate(`/messages/${activeP.conversation_id}`)} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="project-chat-btn"><MessageCircle size={15} />Chat</button>}<button onClick={() => setEdit(true)} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="project-edit-btn">Edit</button></div>
+        </div>
+        <div className="mt-5"><div className="flex justify-between text-sm"><span className="font-semibold">Progress</span><span data-testid="project-progress">{activeP.task_done || 0}/{activeP.task_total || 0} tasks · {activeP.progress || 0}%</span></div><div className="mt-2 h-2.5 rounded-full bg-surface2"><div className="h-full rounded-full bg-brand transition-all" style={{ width: `${activeP.progress || 0}%` }} /></div></div>
+        <div className="mt-4"><AvatarStack ids={activeP.member_ids || []} max={8} /></div>
+      </div>
+      <TaskWorkspace projectId={pid} compactHeader />
+      <ProjectDialog open={edit} onOpenChange={setEdit} project={activeP} onSaved={load} />
+    </div>
+  );
+}
 
 export default function Projects() {
   const { pid } = useParams();
@@ -127,25 +146,23 @@ export default function Projects() {
     } catch {}
     return INITIAL_PROJECTS;
   });
-  const [loading, setLoading] = useState(!list.length);
   const navigate = useNavigate();
   useEffect(() => {
     if (!pid) {
-      setLoading(!list.length);
       api.get("/projects").then((r) => {
         if (Array.isArray(r.data)) {
           setList(r.data);
           GLOBAL_PROJECTS_CACHE = r.data;
           try { localStorage.setItem("circle_projects_cache", JSON.stringify(r.data)); } catch {}
         }
-      }).finally(() => setLoading(false));
+      }).catch(() => {});
     }
   }, [pid]); // eslint-disable-line
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="projects-page">
       {pid ? <Detail pid={pid} /> : <>
         <PageHeader icon={FolderKanban} title="Projects" subtitle="Progress is calculated from real task data." actions={<AccentButton onClick={() => setOpen(true)} data-testid="new-project-btn"><Plus size={16} />New project</AccentButton>} />
-        {loading && !list.length ? <div className="flex py-20 items-center justify-center"><Spinner label="Projects" /></div> : !list.length ? <Empty icon={FolderKanban} title="No projects yet" /> : (
+        {!list.length ? <Empty icon={FolderKanban} title="No projects yet" /> : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {list.map((p, i) => (
               <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>

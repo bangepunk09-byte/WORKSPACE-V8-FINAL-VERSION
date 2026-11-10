@@ -9,21 +9,47 @@ import { Slider } from "../../components/ui/slider";
 export default function ThemeEditor({ scope }) {
   const { prefs, ws, savePrefs, setThemeDraft, reloadWs } = useApp();
   const mode = resolveMode(prefs.theme_mode || "light");
-  const source = scope === "workspace" ? ws.theme || {} : prefs.theme || {};
+  const source = scope === "workspace" ? (ws?.theme || {}) : (prefs?.theme || {});
   const [draft, setDraft] = useState(source);
-  useEffect(() => { setDraft(source); }, [scope]); // eslint-disable-line
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(scope === "workspace" ? (ws?.theme || {}) : (prefs?.theme || {}));
+  }, [scope, ws?.theme, prefs?.theme]);
+
   useEffect(() => () => setThemeDraft(null), [setThemeDraft]);
-  const base = { ...DEFAULTS[mode], ...(scope === "personal" ? ws.theme?.[mode] || {} : {}) };
+  const base = { ...DEFAULTS[mode], ...(scope === "personal" ? ws?.theme?.[mode] || {} : {}) };
   const tokens = { ...base, ...(draft[mode] || {}) };
   const update = (next) => { setDraft(next); setThemeDraft(scope === "personal" ? next : null); };
   const setTok = (k, v) => update({ ...draft, [mode]: { ...(draft[mode] || {}), [k]: v } });
   const warnings = [["text", "surface"], ["text", "bg"], ["muted", "surface"]].filter(([a, b]) => isHex(tokens[a]) && isHex(tokens[b]) && contrast(tokens[a], tokens[b]) < (a === "muted" ? 3 : 4.5));
+
   const save = async () => {
+    setSaving(true);
     try {
-      if (scope === "workspace") { await api.patch("/workspace", { theme: draft }); await reloadWs(); } else await savePrefs({ theme: draft });
-      setThemeDraft(null); toast.success("Theme saved");
-    } catch (e) { toast.error(errMsg(e)); }
+      const cleanDraft = { ...draft };
+      if (cleanDraft[mode] && typeof cleanDraft[mode] === "object") {
+        const validColors = {};
+        Object.entries(cleanDraft[mode]).forEach(([k, v]) => {
+          if (isHex(v)) validColors[k] = v;
+        });
+        cleanDraft[mode] = validColors;
+      }
+      if (scope === "workspace") {
+        await api.patch("/workspace", { theme: cleanDraft });
+        await reloadWs();
+      } else {
+        await savePrefs({ theme: cleanDraft });
+      }
+      setThemeDraft(null);
+      toast.success("Tema berhasil disimpan!");
+    } catch (e) {
+      toast.error(errMsg(e, "Gagal menyimpan tema"));
+    } finally {
+      setSaving(false);
+    }
   };
+
   return (
     <div className="space-y-5" data-testid={`theme-editor-${scope}`}>
       <p className="text-sm text-sub">Editing the <b className="text-ink">{mode}</b> palette {scope === "workspace" ? "for everyone (personal themes still override it)" : "for you only"}. Switch mode above to edit the other palette.{scope === "workspace" && " Live preview applies after saving."}</p>
@@ -38,11 +64,11 @@ export default function ThemeEditor({ scope }) {
       </div>
       {warnings.length > 0 && <div className="flex gap-2 rounded-2xl bg-soft-yellow p-3 text-sm text-amber-900 dark:text-amber-100" data-testid="contrast-warning"><AlertTriangle size={16} className="mt-0.5 shrink-0" />Low contrast: {warnings.map(([a, b]) => `${TOKEN_LABELS[a]} on ${TOKEN_LABELS[b]} (${contrast(tokens[a], tokens[b]).toFixed(1)}:1)`).join(", ")}. Text may be hard to read.</div>}
       <div><p className="mb-2 flex justify-between text-xs font-semibold"><span>Corner radius</span><span className="text-sub">{draft.radius ?? 14}px</span></p><Slider min={4} max={24} step={1} value={[draft.radius ?? 14]} onValueChange={([v]) => update({ ...draft, radius: v })} data-testid="theme-radius-slider" /></div>
-      <div><p className="mb-2 text-xs font-semibold">Button style</p><div className="flex gap-2">{[["pill", "Pill"], ["rounded", "Rounded"], ["sharp", "Sharp"]].map(([k, l]) => <button key={k} onClick={() => update({ ...draft, button: k })} className={`h-10 flex-1 border text-sm font-semibold ${(draft.button || "pill") === k ? "bg-brand text-white" : ""}`} style={{ borderRadius: k === "pill" ? 999 : k === "sharp" ? 6 : 14 }} data-testid={`theme-button-${k}`}>{l}</button>)}</div></div>
+      <div><p className="mb-2 text-xs font-semibold">Button style</p><div className="flex gap-2">{[["pill", "Pill"], ["rounded", "Rounded"], ["sharp", "Sharp"]].map(([k, l]) => <button type="button" key={k} onClick={() => update({ ...draft, button: k })} className={`h-10 flex-1 border text-sm font-semibold ${(draft.button || "pill") === k ? "bg-brand text-white" : ""}`} style={{ borderRadius: k === "pill" ? 999 : k === "sharp" ? 6 : 14 }} data-testid={`theme-button-${k}`}>{l}</button>)}</div></div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={save} disabled={!Object.values(draft[mode] || {}).every(isHex)} className="btn-accent h-10 px-5 text-sm font-semibold disabled:opacity-50" data-testid="theme-save-btn">Save</button>
-        <button onClick={() => update(source)} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-cancel-btn">Cancel</button>
-        <button onClick={() => update({})} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-reset-btn">Reset to defaults</button>
+        <button type="button" onClick={save} disabled={saving} className="btn-accent h-10 px-5 text-sm font-semibold disabled:opacity-50" data-testid="theme-save-btn">{saving ? "Menyimpan..." : "Save"}</button>
+        <button type="button" onClick={() => update(source)} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-cancel-btn">Cancel</button>
+        <button type="button" onClick={() => update({})} className="btn-ghost h-10 border px-5 text-sm font-semibold" data-testid="theme-reset-btn">Reset to defaults</button>
       </div>
     </div>
   );

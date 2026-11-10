@@ -16,7 +16,7 @@ export function MemberPicker({ open, onOpenChange, exclude = [], onPick, title =
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" className="h-10 rounded-xl border bg-surface2 px-3 text-sm outline-none" />
         <div className="max-h-72 overflow-y-auto">
-          {users.filter((u) => !exclude.includes(u.user_id) && u.name.toLowerCase().includes(q.toLowerCase())).map((u) => (
+          {users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant" && !exclude.includes(u.user_id) && u.name.toLowerCase().includes(q.toLowerCase())).map((u) => (
             <label key={u.user_id} className="flex items-center gap-3 rounded-xl p-2 hover:bg-surface2"><input type="checkbox" checked={sel.includes(u.user_id)} onChange={() => setSel(sel.includes(u.user_id) ? sel.filter((x) => x !== u.user_id) : [...sel, u.user_id])} className="h-4 w-4 accent-[var(--c-accent)]" data-testid={`pick-member-${u.user_id}`} /><Avatar user={u} size={28} showStatus={false} /><span className="text-sm">{u.name}</span></label>
           ))}
         </div>
@@ -67,7 +67,7 @@ export function GroupDialog({ open, onOpenChange, group, onSaved }) {
         <input value={f.location || ""} onChange={(e) => setF({ ...f, location: e.target.value })} placeholder="Location (optional)" className="h-10 rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="group-location-input" />
         {!group && (
           <div className="max-h-40 overflow-y-auto rounded-xl border p-1">
-            {users.filter((u) => u.user_id !== me.user_id).map((u) => (
+            {users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant" && u.user_id !== me?.user_id).map((u) => (
               <label key={u.user_id} className="flex items-center gap-2 rounded-lg p-1.5 text-sm hover:bg-surface2"><input type="checkbox" checked={f.member_ids.includes(u.user_id)} onChange={() => setF({ ...f, member_ids: f.member_ids.includes(u.user_id) ? f.member_ids.filter((x) => x !== u.user_id) : [...f.member_ids, u.user_id] })} className="accent-[var(--c-accent)]" data-testid={`group-member-${u.user_id}`} />{u.name}</label>
             ))}
           </div>

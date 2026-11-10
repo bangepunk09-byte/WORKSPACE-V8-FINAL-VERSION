@@ -29,18 +29,18 @@ try {
 
 export default function Groups() {
   const [groups, setGroups] = useState(GROUPS_CACHE);
-  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("all");
   const navigate = useNavigate();
 
   const load = () => {
-    if (!groups || groups.length === 0) setLoading(true);
     api.get("/groups/browse").then((r) => {
       const arr = Array.isArray(r.data) ? r.data : [];
-      setGroups(arr);
-      localStorage.setItem("circle_groups_cache", JSON.stringify(arr));
-    }).catch(() => {}).finally(() => setLoading(false));
+      if (arr.length > 0) {
+        setGroups(arr);
+        localStorage.setItem("circle_groups_cache", JSON.stringify(arr));
+      }
+    }).catch(() => {});
   };
 
   useEffect(() => { load(); }, []);
@@ -59,9 +59,9 @@ export default function Groups() {
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="groups-page">
       <PageHeader icon={Hash} title="Groups & Channels" subtitle="Public, private, department and project groups in your workspace." actions={<AccentButton onClick={() => setOpen(true)} data-testid="create-group-btn"><Plus size={16} />New group</AccentButton>} />
       <div className="mb-5 flex gap-2 overflow-x-auto no-scrollbar">
-        {["all", "mine", "public", "private", "department", "project"].map((f) => <button key={f} onClick={() => setFilter(f)} className={`h-9 whitespace-nowrap rounded-full px-4 text-sm font-medium capitalize ${filter === f ? "bg-ink text-[var(--c-surface)]" : "border bg-surface text-sub"}`} data-testid={`group-filter-${f}`}>{f === "mine" ? "My groups" : f}</button>)}
+        {["all", "mine", "public", "private", "department", "project"].map((f) => <button key={f} onClick={() => setFilter(f)} className={`h-9 whitespace-nowrap rounded-full px-4 text-sm font-medium capitalize transition-colors cursor-pointer ${filter === f ? "bg-brand text-white shadow-xs" : "border bg-surface text-sub hover:bg-surface2"}`} data-testid={`group-filter-${f}`}>{f === "mine" ? "My groups" : f}</button>)}
       </div>
-      {loading ? <Spinner /> : !list.length ? <Empty icon={Hash} title="No groups here" /> : (
+      {!list.length ? <Empty icon={Hash} title="No groups here" /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((g) => { const I = ICON[g.group_type] || Hash; return (
             <div key={g.id} className="card flex flex-col p-5 transition-transform hover:-translate-y-0.5" data-testid={`group-card-${g.id}`}>

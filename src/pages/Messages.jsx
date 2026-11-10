@@ -5,7 +5,7 @@ import { useApp } from "../context/AppContext";
 import { api } from "../lib/api";
 import { Avatar, Empty, fmtTime, GroupIcon, Spinner } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
-import ChatView from "./chat/ChatView";
+import ChatView, { hydrateConversationsCache, appendMessageToCache, updateMessageInCache } from "./chat/ChatView";
 
 function NewDM({ open, onOpenChange }) {
   const { users, me } = useApp();
@@ -29,20 +29,49 @@ function NewDM({ open, onOpenChange }) {
   );
 }
 
-let CONVS_CACHE = [];
+const DEFAULT_CONVS = [
+  {
+    id: "conv_circle_user_admin1",
+    type: "dm",
+    name: "Circle (Workspace Assistant)",
+    member_ids: ["user_circle_assistant", "user_admin1"],
+    unread: 0,
+    last_message_preview: "Halo! Saya Circle, asisten workspace Anda.",
+    last_message_at: new Date().toISOString()
+  },
+  { id: "group_official_marketing", type: "group", name: "Marketing", is_verified: true, member_ids: ["user_admin1"], unread: 0, last_message_preview: "No messages yet" },
+  { id: "group_official_sales", type: "group", name: "Sales", is_verified: true, member_ids: ["user_admin1"], unread: 0, last_message_preview: "No messages yet" },
+  { id: "group_official_it", type: "group", name: "IT", is_verified: true, member_ids: ["user_admin1"], unread: 0, last_message_preview: "No messages yet" },
+  { id: "group_official_finance", type: "group", name: "Finance", is_verified: true, member_ids: ["user_admin1"], unread: 0, last_message_preview: "No messages yet" },
+  { id: "group_official_legal", type: "group", name: "Legal", is_verified: true, member_ids: ["user_admin1"], unread: 0, last_message_preview: "No messages yet" },
+  { id: "group_official_hrga", type: "group", name: "HRGA", is_verified: true, member_ids: ["user_admin1"], unread: 0, last_message_preview: "No messages yet" }
+];
+
+let CONVS_CACHE = DEFAULT_CONVS;
 try {
   const saved = localStorage.getItem("circle_convs_cache");
   if (saved) {
     const parsed = JSON.parse(saved);
-    if (Array.isArray(parsed)) CONVS_CACHE = parsed;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      CONVS_CACHE = parsed;
+      hydrateConversationsCache(parsed);
+    }
   }
 } catch {}
 
 export default function Messages() {
   const { cid } = useParams();
   const { me, userMap, subscribe } = useApp();
-  const [convs, setConvs] = useState(Array.isArray(CONVS_CACHE) ? CONVS_CACHE : []);
-  const [loading, setLoading] = useState(!convs.length);
+  const [convs, setConvs] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_convs_cache");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return Array.isArray(CONVS_CACHE) && CONVS_CACHE.length > 0 ? CONVS_CACHE : DEFAULT_CONVS;
+  });
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
   const [dm, setDm] = useState(false);
@@ -50,16 +79,19 @@ export default function Messages() {
 
   const load = () => api.get("/conversations").then((r) => {
     const arr = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.conversations) ? r.data.conversations : []);
-    setConvs(arr);
-    CONVS_CACHE = arr;
-    try { localStorage.setItem("circle_convs_cache", JSON.stringify(arr)); } catch {}
-  }).catch(() => {}).finally(() => setLoading(false));
+    if (arr.length > 0) {
+      setConvs(arr);
+      CONVS_CACHE = arr;
+      hydrateConversationsCache(arr);
+    }
+  }).catch(() => {});
 
-  useEffect(() => { load(); }, [cid]); // eslint-disable-line
+  useEffect(() => { load(); }, [cid]);
 
   useEffect(() => subscribe((e) => { 
     if (e.type === "message:new") {
       const d = e.data;
+      appendMessageToCache(d);
       setConvs((prev) => {
         const list = Array.isArray(prev) ? prev : [];
         const idx = list.findIndex((c) => c && c.id === d.conversation_id);
@@ -68,7 +100,7 @@ export default function Messages() {
             ...list[idx],
             last_message_preview: d.text || "Pesan baru",
             last_message_at: d.created_at || new Date().toISOString(),
-            unread: d.sender_id !== me?.user_id ? (list[idx].unread || 0) + 1 : list[idx].unread
+            unread: d.sender_id !== me?.user_id && cid !== d.conversation_id ? (list[idx].unread || 0) + 1 : list[idx].unread
           };
           const next = [updated, ...list.filter((c) => c && c.id !== d.conversation_id)];
           CONVS_CACHE = next;
@@ -78,10 +110,12 @@ export default function Messages() {
         return list;
       });
       load();
+    } else if (e.type === "message:update") {
+      updateMessageInCache(e.data);
     } else if (["read", "conversation:new", "conversations:changed", "access_requests:changed"].includes(e.type)) {
       load();
     }
-  }), [subscribe, me?.user_id]); // eslint-disable-line
+  }), [subscribe, me?.user_id, cid]); // eslint-disable-line
 
   const { ws } = useApp();
   const safeConvs = Array.isArray(convs) ? convs : [];
@@ -127,9 +161,7 @@ export default function Messages() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-2 scroll-thin">
-          {loading ? (
-            <div className="flex h-32 items-center justify-center"><Spinner label="Messages" /></div>
-          ) : list.map((c) => (
+          {list.map((c) => (
             <button key={c.id} onClick={() => navigate(`/messages/${c.id}`)} data-testid={`conversation-item-${c.id}`}
               className={`flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition-colors ${cid === c.id ? "bg-soft-red" : "hover:bg-surface2"}`}>
               {c.other ? <Avatar user={c.other} size={42} /> : <GroupIcon c={c} size={42} />}
@@ -145,11 +177,11 @@ export default function Messages() {
               </span>
             </button>
           ))}
-          {!loading && !list.length && <Empty icon={MessageCircle} title="No conversations" text="Start a direct message or join a group." />}
+          {!list.length && <Empty icon={MessageCircle} title="No conversations" text="Start a direct message or join a group." />}
         </div>
       </aside>
       <section className={`${cid ? "flex" : "hidden lg:flex"} min-w-0 flex-1`}>
-        {cid ? <ChatView key={cid} cid={cid} onChange={load} /> : <div className="flex flex-1 items-center justify-center"><Empty icon={MessageCircle} title="Pick a conversation" text="Your messages stay private to the people in each conversation." /></div>}
+        {cid ? <ChatView cid={cid} onChange={load} /> : <div className="flex flex-1 items-center justify-center"><Empty icon={MessageCircle} title="Pick a conversation" text="Your messages stay private to the people in each conversation." /></div>}
       </section>
       <NewDM open={dm} onOpenChange={setDm} />
     </div>

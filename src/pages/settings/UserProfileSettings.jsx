@@ -1,23 +1,40 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Camera, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile, fileUrl } from "../../lib/api";
 import { Card } from "./AdminPanels";
 
-const DEPARTMENTS = ["Engineering", "Product", "Operations", "Design", "Marketing", "General"];
+const DEFAULT_DEPARTMENTS = ["Engineering", "Product", "Operations", "Design", "Marketing", "Sales", "IT", "Finance", "Legal", "HRGA", "General"];
 
 export function UserProfileSettings() {
-  const { me, setSession, reloadUsers } = useApp();
+  const { me, ws, setSession, reloadUsers } = useApp();
   const [f, setF] = useState({
-    name: me.name || "",
-    job_title: me.job_title || "",
-    department: me.department || "Engineering",
-    phone: me.phone || "",
-    bio: me.bio || "",
-    avatar: me.avatar || me.picture || ""
+    name: me?.name || "",
+    job_title: me?.job_title || "",
+    department: me?.department || "Engineering",
+    phone: me?.phone || "",
+    bio: me?.bio || "",
+    avatar: me?.avatar || me?.picture || "",
+    custom_fields: me?.custom_fields || {}
   });
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!me) return;
+    setF({
+      name: me.name || "",
+      job_title: me.job_title || "",
+      department: me.department || "Engineering",
+      phone: me.phone || "",
+      bio: me.bio || "",
+      avatar: me.avatar || me.picture || "",
+      custom_fields: me.custom_fields || {}
+    });
+  }, [me]);
+
+  const departments = Array.from(new Set([...(ws?.divisions || []), ...DEFAULT_DEPARTMENTS, f.department].filter(Boolean)));
+  const customProfileFields = Array.isArray(ws?.profile_fields) ? ws.profile_fields : [];
 
   const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -28,11 +45,11 @@ export function UserProfileSettings() {
       const url = fileUrl(up.id);
       setF((prev) => ({ ...prev, avatar: url, picture: url }));
 
-      // Auto-save user photo to backend and sync session state immediately
-      const { data } = await api.patch(`/users/${me.user_id}`, { avatar: url, picture: url });
+      const targetId = me?.user_id || "me";
+      const { data } = await api.patch(`/users/${targetId}`, { avatar: url, picture: url });
       setSession((s) => ({
         ...s,
-        user: { ...s.user, ...data, avatar: url, picture: url }
+        user: { ...s?.user, ...data, avatar: url, picture: url }
       }));
       reloadUsers();
       toast.success("Foto profil berhasil diperbarui!");
@@ -44,7 +61,7 @@ export function UserProfileSettings() {
   };
 
   const handleSave = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!f.name.trim()) {
       return toast.error("Nama lengkap wajib diisi.");
     }
@@ -52,13 +69,15 @@ export function UserProfileSettings() {
     try {
       const payload = {
         ...f,
+        name: f.name.trim(),
         avatar: f.avatar || f.picture || "",
         picture: f.avatar || f.picture || ""
       };
-      const { data } = await api.patch(`/users/${me.user_id}`, payload);
+      const targetId = me?.user_id || "me";
+      const { data } = await api.patch(`/users/${targetId}`, payload);
       setSession((s) => ({
         ...s,
-        user: { ...s.user, ...data, avatar: data.avatar || data.picture, picture: data.avatar || data.picture }
+        user: { ...s?.user, ...data, avatar: data.avatar || data.picture, picture: data.avatar || data.picture }
       }));
       reloadUsers();
       toast.success("Data diri lengkap berhasil disimpan!");
@@ -80,7 +99,7 @@ export function UserProfileSettings() {
         <div className="flex items-center gap-4 py-2">
           <div className="relative">
             <img
-              src={f.avatar || "https://api.dicebear.com/7.x/initials/svg?seed=" + encodeURIComponent(f.name)}
+              src={f.avatar || "https://api.dicebear.com/7.x/initials/svg?seed=" + encodeURIComponent(f.name || "User")}
               alt="Avatar preview"
               className="h-20 w-20 rounded-full object-cover border-2 border-brand/30 shadow-sm"
               onError={(e) => { e.currentTarget.src = "https://api.dicebear.com/7.x/initials/svg?seed=User"; }}
@@ -92,8 +111,8 @@ export function UserProfileSettings() {
           </div>
           <div>
             <h4 className="text-sm font-bold text-ink">{f.name || "Nama Pengguna"}</h4>
-            <p className="text-xs text-sub">{me.email}</p>
-            <p className="mt-1 text-[11px] font-semibold text-brand">Role: {me.role?.replace(/_/g, " ").toUpperCase()}</p>
+            <p className="text-xs text-sub">{me?.email}</p>
+            <p className="mt-1 text-[11px] font-semibold text-brand">Role: {me?.role?.replace(/_/g, " ").toUpperCase()}</p>
           </div>
         </div>
 
@@ -114,7 +133,7 @@ export function UserProfileSettings() {
             <label className="mb-1 block text-xs font-semibold text-sub">Alamat Email (Login)</label>
             <input
               disabled
-              value={me.email || ""}
+              value={me?.email || ""}
               className="h-10 w-full rounded-xl border bg-surface2/50 px-3 text-xs text-sub cursor-not-allowed"
             />
           </div>
@@ -129,7 +148,7 @@ export function UserProfileSettings() {
               className="h-10 w-full rounded-xl border bg-surface2 px-2.5 text-xs font-medium outline-none text-ink"
               data-testid="profile-dept-select"
             >
-              {DEPARTMENTS.map((d) => (
+              {departments.map((d) => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
@@ -169,6 +188,36 @@ export function UserProfileSettings() {
             data-testid="profile-bio-input"
           />
         </div>
+
+        {customProfileFields.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t">
+            {customProfileFields.map((cf) => (
+              <div key={cf.key}>
+                <label className="mb-1 block text-xs font-semibold text-sub">{cf.name}</label>
+                {cf.type === "dropdown" && Array.isArray(cf.options) && cf.options.length > 0 ? (
+                  <select
+                    value={f.custom_fields?.[cf.key] || ""}
+                    onChange={(e) => setF({ ...f, custom_fields: { ...(f.custom_fields || {}), [cf.key]: e.target.value } })}
+                    className="h-10 w-full rounded-xl border bg-surface2 px-2.5 text-xs outline-none text-ink"
+                  >
+                    <option value="">Pilih {cf.name}...</option>
+                    {cf.options.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={cf.type === "date" ? "date" : cf.type === "url" ? "url" : "text"}
+                    value={f.custom_fields?.[cf.key] || ""}
+                    onChange={(e) => setF({ ...f, custom_fields: { ...(f.custom_fields || {}), [cf.key]: e.target.value } })}
+                    placeholder={cf.name}
+                    className="h-10 w-full rounded-xl border bg-surface2 px-3 text-xs outline-none focus:border-brand"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex justify-end pt-2 border-t">
           <button

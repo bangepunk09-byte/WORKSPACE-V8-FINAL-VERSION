@@ -41,7 +41,9 @@ function Panel({ conv, reload, onClose }) {
       <div className="flex-1 overflow-y-auto p-3 scroll-thin">
         {tab === "members" && (<>
           {conv.type === "group" && amAdmin && <button onClick={() => setAdd(true)} className="mb-2 flex w-full items-center gap-2 rounded-xl p-2 text-sm font-semibold text-brand hover:bg-surface2" data-testid="add-members-btn"><UserPlus size={16} />Add members</button>}
-          {(conv.member_ids || []).map((id, i) => { const u = userMap[id]; if (!u) return null; const adm = conv.admin_ids?.includes(id); return (
+          {(conv.member_ids || [])
+            .filter((id) => conv.type !== "group" || id !== "user_circle_assistant")
+            .map((id, i) => { const u = userMap[id]; if (!u || (conv.type === "group" && (u.is_bot || u.role === "assistant"))) return null; const adm = conv.admin_ids?.includes(id); return (
             <div key={`${id}-${i}`} className="group flex items-center gap-2.5 rounded-xl p-2 hover:bg-surface2">
               <button onClick={() => navigate(`/people/${id}`)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left"><Avatar user={u} size={32} /><span className="min-w-0"><span className="block truncate text-sm font-medium">{u.name}{adm && <Shield size={11} className="ml-1 inline text-brand" />}</span><span className="block text-[11px] text-sub">{online.has(id) ? "Online" : u.job_title}</span></span></button>
               {conv.type === "group" && amAdmin && id !== me.user_id && (
@@ -68,7 +70,49 @@ function Panel({ conv, reload, onClose }) {
   );
 }
 
-const CHAT_CACHE = {};
+export const CHAT_CACHE = {};
+
+export function hydrateConversationsCache(convs) {
+  if (!Array.isArray(convs)) return;
+  try {
+    localStorage.setItem("circle_convs_cache", JSON.stringify(convs));
+  } catch {}
+  convs.forEach((c) => {
+    if (!c || !c.id) return;
+    CHAT_CACHE[`conv_${c.id}`] = c;
+    if (Array.isArray(c.messages)) {
+      CHAT_CACHE[`msgs_${c.id}`] = c.messages;
+      try {
+        localStorage.setItem(`circle_msgs_cache_${c.id}`, JSON.stringify(c.messages));
+      } catch {}
+    }
+  });
+}
+
+export function appendMessageToCache(msg) {
+  if (!msg || !msg.conversation_id) return;
+  const cid = msg.conversation_id;
+  const existing = getInitialMsgs(cid);
+  const idx = existing.findIndex((m) => m.id === msg.id);
+  const next = idx !== -1
+    ? existing.map((m, i) => (i === idx ? msg : m))
+    : [...existing, msg];
+  CHAT_CACHE[`msgs_${cid}`] = next;
+  try {
+    localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(next));
+  } catch {}
+}
+
+export function updateMessageInCache(msg) {
+  if (!msg || !msg.conversation_id) return;
+  const cid = msg.conversation_id;
+  const existing = getInitialMsgs(cid);
+  const next = existing.map((m) => (m.id === msg.id ? msg : m));
+  CHAT_CACHE[`msgs_${cid}`] = next;
+  try {
+    localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(next));
+  } catch {}
+}
 
 const getInitialConv = (cid, me) => {
   if (CHAT_CACHE[`conv_${cid}`]) return CHAT_CACHE[`conv_${cid}`];
@@ -78,7 +122,13 @@ const getInitialConv = (cid, me) => {
       const arr = JSON.parse(saved);
       if (Array.isArray(arr)) {
         const found = arr.find((x) => x && x.id === cid);
-        if (found) return found;
+        if (found) {
+          CHAT_CACHE[`conv_${cid}`] = found;
+          if (Array.isArray(found.messages) && !CHAT_CACHE[`msgs_${cid}`]) {
+            CHAT_CACHE[`msgs_${cid}`] = found.messages;
+          }
+          return found;
+        }
       }
     }
   } catch {}
@@ -94,7 +144,7 @@ const getInitialConv = (cid, me) => {
     id: cid,
     type: isOfficial ? "group" : "dm",
     name: name,
-    member_ids: ["user_circle_assistant", me?.user_id].filter(Boolean),
+    member_ids: isOfficial ? [me?.user_id].filter(Boolean) : ["user_circle_assistant", me?.user_id].filter(Boolean),
     admin_ids: [],
     unread: 0,
     is_verified: isOfficial
@@ -102,24 +152,35 @@ const getInitialConv = (cid, me) => {
 };
 
 
-const getInitialMsgs = (cid) => {
+export const getInitialMsgs = (cid) => {
   if (CHAT_CACHE[`msgs_${cid}`]) return CHAT_CACHE[`msgs_${cid}`];
   try {
     const saved = localStorage.getItem(`circle_msgs_cache_${cid}`);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        CHAT_CACHE[`msgs_${cid}`] = parsed;
+        return parsed;
+      }
+    }
+    const savedConvs = localStorage.getItem("circle_convs_cache");
+    if (savedConvs) {
+      const arr = JSON.parse(savedConvs);
+      const found = Array.isArray(arr) ? arr.find((x) => x && x.id === cid) : null;
+      if (found && Array.isArray(found.messages)) {
+        CHAT_CACHE[`msgs_${cid}`] = found.messages;
+        return found.messages;
+      }
     }
   } catch {}
   return [];
 };
 
 export default function ChatView({ cid, onChange }) {
-  const { me, userMap, subscribe, online } = useApp();
+  const { me, ws, userMap, subscribe, online } = useApp();
   const [conv, setConv] = useState(() => getInitialConv(cid, me));
   const [msgs, setMsgs] = useState(() => getInitialMsgs(cid));
-  const [loading, setLoading] = useState(!msgs.length);
-  const [more, setMore] = useState(true);
+  const [more, setMore] = useState(false);
   const [reply, setReply] = useState(null);
   const [typing, setTyping] = useState({});
   const [panel, setPanel] = useState(window.innerWidth >= 1280);
@@ -128,9 +189,20 @@ export default function ChatView({ cid, onChange }) {
   const [taskFrom, setTaskFrom] = useState(null);
   const [search, setSearch] = useState(null);
   const [results, setResults] = useState([]);
+  const prevCid = useRef(cid);
   const bottom = useRef(null);
   const scroller = useRef(null);
   const navigate = useNavigate();
+
+  // Synchronously swap state on cid change during render so there is 0ms lag between conversations
+  if (prevCid.current !== cid) {
+    prevCid.current = cid;
+    const nextConv = getInitialConv(cid, me);
+    const nextMsgs = getInitialMsgs(cid);
+    setConv(nextConv);
+    setMsgs(nextMsgs);
+    setReply(null);
+  }
 
   const loadConv = () => api.get(`/conversations/${cid}`).then((r) => {
     if (r.data) {
@@ -155,7 +227,7 @@ export default function ChatView({ cid, onChange }) {
   useEffect(() => {
     setConv(getInitialConv(cid, me));
     setMsgs(getInitialMsgs(cid));
-    setLoading(!getInitialMsgs(cid).length);
+    requestAnimationFrame(() => bottom.current?.scrollIntoView());
     loadConv();
     api.get(`/conversations/${cid}/messages`).then((r) => {
       const arr = Array.isArray(r.data) ? r.data : [];
@@ -163,23 +235,27 @@ export default function ChatView({ cid, onChange }) {
       CHAT_CACHE[`msgs_${cid}`] = arr;
       try { localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(arr)); } catch {}
       setMore(arr.length >= 50);
-      setTimeout(() => bottom.current?.scrollIntoView(), 20);
+      requestAnimationFrame(() => bottom.current?.scrollIntoView());
       markRead();
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [cid]); // eslint-disable-line
+    }).catch(() => {});
+  }, [cid]);
 
   useEffect(() => subscribe((e) => {
     const d = e.data;
     if (e.type === "message:new" && d.conversation_id === cid) {
       setMsgs((x) => {
         const arr = Array.isArray(x) ? x : [];
-        const next = arr.some((y) => y.id === d.id) ? arr : [...arr, d];
+        // Replace optimistic message if matching text/sender or append if new
+        const optIdx = arr.findIndex((y) => y.id === d.id || (y._optimistic && y.sender_id === d.sender_id && y.text === d.text));
+        const next = optIdx !== -1
+          ? arr.map((y, idx) => (idx === optIdx ? d : y))
+          : [...arr, d];
         CHAT_CACHE[`msgs_${cid}`] = next;
         try { localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(next)); } catch {}
         return next;
       });
       setTyping((t) => ({ ...t, [d.sender_id]: 0 }));
-      setTimeout(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), 30);
+      requestAnimationFrame(() => bottom.current?.scrollIntoView({ behavior: "smooth" }));
       if (d.sender_id !== me?.user_id) {
         markRead();
         playSound("message");
@@ -201,7 +277,11 @@ export default function ChatView({ cid, onChange }) {
   useEffect(() => { const t = setInterval(() => setTyping((x) => ({ ...x })), 2000); return () => clearInterval(t); }, []);
   useEffect(() => {
     if (!search) { setResults([]); return undefined; }
-    const t = setTimeout(() => api.get(`/conversations/${cid}/messages`, { params: { q: search } }).then((r) => setResults(Array.isArray(r.data) ? r.data : [])), 250);
+    const qLower = search.toLowerCase();
+    // Instant client-side search first
+    const localMatches = (Array.isArray(msgs) ? msgs : []).filter((m) => (m.text || "").toLowerCase().includes(qLower));
+    setResults(localMatches);
+    const t = setTimeout(() => api.get(`/conversations/${cid}/messages`, { params: { q: search } }).then((r) => setResults(Array.isArray(r.data) ? r.data : [])), 120);
     return () => clearTimeout(t);
   }, [search, cid]);
 
@@ -233,21 +313,37 @@ export default function ChatView({ cid, onChange }) {
   const lastMine = [...safeMsgs].reverse().find((m) => m.sender_id === me?.user_id)?.id;
   const openPanel = () => (window.innerWidth >= 1280 ? setPanel(!panel) : setMobilePanel(true));
 
+  const handleSent = (m, replaceId) => {
+    setMsgs((x) => {
+      const arr = Array.isArray(x) ? x : [];
+      let next;
+      if (replaceId) {
+        const idx = arr.findIndex((y) => y.id === replaceId || y.id === m.id);
+        next = idx !== -1 ? arr.map((y, i) => (i === idx ? m : y)) : [...arr, m];
+      } else {
+        next = arr.some((y) => y.id === m.id) ? arr : [...arr, m];
+      }
+      CHAT_CACHE[`msgs_${cid}`] = next;
+      try { localStorage.setItem(`circle_msgs_cache_${cid}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    requestAnimationFrame(() => bottom.current?.scrollIntoView({ behavior: "smooth" }));
+  };
+
   return (
     <div className="flex min-w-0 flex-1" data-testid="chat-view">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-surface px-2 sm:px-4 pt-safe">
           <button onClick={() => navigate("/messages")} className="btn-ghost flex h-11 w-11 items-center justify-center lg:hidden" aria-label="Back" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
           <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-            {other ? <Avatar user={other} size={38} /> : <GroupIcon c={conv} size={40} />}
+            {other ? <Avatar user={other} size={38} /> : <GroupIcon c={activeConv} size={40} />}
             <span className="min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="truncate font-bold" data-testid="chat-title">{title}</span>
-                {conv.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500 fill-blue-500/10" />}
+                {activeConv.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500 fill-blue-500/10" />}
               </div>
-              <span className="block truncate text-xs text-sub">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} typing…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(conv.member_ids || []).length} members${conv.archived ? " · Archived" : ""}`}</span></span>
+              <span className="block truncate text-xs text-sub">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} typing…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(activeConv.member_ids || []).filter((id) => id !== "user_circle_assistant").length} members${activeConv.archived ? " · Archived" : ""}`}</span></span>
           </button>
-          {/* Call buttons removed as requested */}
           <button onClick={() => setSearch(search === null ? "" : null)} className="btn-ghost hidden h-11 w-11 items-center justify-center text-sub sm:flex" aria-label="Search in conversation" data-testid="chat-search-toggle"><Search size={18} /></button>
           <button onClick={openPanel} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Details" data-testid="chat-details-toggle"><PanelRight size={18} /></button>
         </header>
@@ -259,25 +355,21 @@ export default function ChatView({ cid, onChange }) {
           </div>
         )}
         <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 scroll-thin" data-testid="message-list">
-          {loading ? (
-            <div className="flex h-full items-center justify-center"><Spinner label="Messages" /></div>
-          ) : (<>
-            {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Load older messages</button></div>}
-            {safeMsgs.map((m, i) => {
-              const prev = safeMsgs[i - 1];
-              const grouped = prev && prev.sender_id === m.sender_id && prev.type !== "call" && new Date(m.created_at) - new Date(prev.created_at) < 300000;
-              return <MessageItem key={m.id || i} m={m} mine={m.sender_id === me?.user_id} grouped={grouped} conv={conv} onReply={setReply} onCreateTask={setTaskFrom} readBy={m.id === lastMine ? readers(m.created_at) : undefined} />;
-            })}
-            {!safeMsgs.length && <p className="py-20 text-center text-sm text-sub">Say hello to {title}.</p>}
-            <div ref={bottom} />
-          </>)}
+          {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Load older messages</button></div>}
+          {safeMsgs.map((m, i) => {
+            const prev = safeMsgs[i - 1];
+            const grouped = prev && prev.sender_id === m.sender_id && prev.type !== "call" && new Date(m.created_at) - new Date(prev.created_at) < 300000;
+            return <MessageItem key={m.id || i} m={m} mine={m.sender_id === me?.user_id} grouped={grouped} conv={activeConv} onReply={setReply} onCreateTask={setTaskFrom} readBy={m.id === lastMine ? readers(m.created_at) : undefined} />;
+          })}
+          {!safeMsgs.length && <p className="py-20 text-center text-sm text-sub">Say hello to {title}.</p>}
+          <div ref={bottom} />
         </div>
-        {conv.is_member === false ? (
-          <div className="border-t bg-surface p-4 text-center"><button onClick={join} className="btn-accent h-11 px-6 font-semibold" data-testid="join-group-btn">Join {conv.name}</button></div>
-        ) : <Composer conv={conv} reply={reply} onCancelReply={() => setReply(null)} onPoll={() => setPoll(true)} onSent={(m) => setMsgs((x) => (x.some((y) => y.id === m.id) ? x : [...x, m]))} />}
+        {activeConv.is_member === false ? (
+          <div className="border-t bg-surface p-4 text-center"><button onClick={join} className="btn-accent h-11 px-6 font-semibold" data-testid="join-group-btn">Join {activeConv.name}</button></div>
+        ) : <Composer conv={activeConv} reply={reply} onCancelReply={() => setReply(null)} onPoll={() => setPoll(true)} onSent={handleSent} />}
       </div>
-      {panel && <aside className="hidden w-[320px] shrink-0 border-l bg-surface xl:block"><Panel conv={conv} reload={() => { loadConv(); onChange(); }} onClose={() => setPanel(false)} /></aside>}
-      <Sheet open={mobilePanel} onOpenChange={setMobilePanel}><SheetContent className="w-full bg-surface p-0 sm:max-w-sm"><SheetHeader className="sr-only"><SheetTitle>Details</SheetTitle></SheetHeader><Panel conv={conv} reload={() => { loadConv(); onChange(); }} onClose={() => setMobilePanel(false)} /></SheetContent></Sheet>
+      {panel && <aside className="hidden w-[320px] shrink-0 border-l bg-surface xl:block"><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setPanel(false)} /></aside>}
+      <Sheet open={mobilePanel} onOpenChange={setMobilePanel}><SheetContent className="w-full bg-surface p-0 sm:max-w-sm"><SheetHeader className="sr-only"><SheetTitle>Details</SheetTitle></SheetHeader><Panel conv={activeConv} reload={() => { loadConv(); onChange(); }} onClose={() => setMobilePanel(false)} /></SheetContent></Sheet>
       <CreatePollDialog open={poll} onOpenChange={setPoll} conversationId={cid} />
       <TaskCreate open={!!taskFrom} onOpenChange={(v) => !v && setTaskFrom(null)} preset={taskFrom ? { title: (taskFrom.text || "Task from message").slice(0, 120), description: `<p>${(taskFrom.text || "").replace(/</g, "&lt;")}</p><p><i>From conversation: ${title}</i></p>`, conversation_id: cid, message_id: taskFrom.id } : null} onCreated={(t) => { setTaskFrom(null); api.post(`/tasks/${t.id}/share`, { conversation_id: cid }).catch(() => {}); loadConv(); }} />
     </div>

@@ -73,11 +73,17 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
 export default function Profile() {
   const { uid } = useParams();
   const { me, userMap, ws, statuses, online, reloadUsers } = useApp();
-  const [p, setP] = useState(null);
+  const [rawP, setP] = useState(() => userMap?.[uid] || (uid === me?.user_id ? me : null));
   const [edit, setEdit] = useState(false);
   const navigate = useNavigate();
-  useEffect(() => { setP(null); api.get(`/users/${uid}`).then((r) => setP(r.data)).catch(() => navigate("/people")); }, [uid]); // eslint-disable-line
-  if (!p) return <Spinner />;
+  useEffect(() => {
+    const cachedUser = userMap?.[uid] || (uid === me?.user_id ? me : null);
+    if (cachedUser) setP((prev) => (prev?.user_id === uid ? prev : cachedUser));
+    api.get(`/users/${uid}`).then((r) => setP(r.data)).catch(() => {
+      if (!cachedUser) navigate("/people");
+    });
+  }, [uid]); // eslint-disable-line
+  const p = rawP || userMap?.[uid] || me || { user_id: uid, name: "Employee", job_title: "Team Member", tasks: [] };
   const dmId = async () => (await api.post("/conversations/dm", { user_id: uid })).data.id;
   const done = statuses.filter((s) => s.is_done).map((s) => s.key);
   const mgr = userMap[p.manager_id];

@@ -55,7 +55,7 @@ export function NotificationList({ onNavigate }) {
           {onNavigate && <button onClick={onNavigate} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Tutup" data-testid="close-notifications-btn"><X size={16} /></button>}
         </div>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-2 no-scrollbar">{cats.filter(Boolean).map((c) => <button key={`notif-cat-${c}`} onClick={() => setCat(c)} className={`h-7 whitespace-nowrap rounded-full px-3 text-[11px] font-semibold capitalize ${cat === c ? "bg-ink text-[var(--c-surface)]" : "bg-surface2 text-sub"}`} data-testid={`notif-cat-${c}`}>{c}</button>)}</div>
+      <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-2 no-scrollbar">{cats.filter(Boolean).map((c) => <button key={`notif-cat-${c}`} onClick={() => setCat(c)} className={`h-7 whitespace-nowrap rounded-full px-3 text-[11px] font-semibold capitalize transition-colors cursor-pointer ${cat === c ? "bg-brand text-white shadow-xs" : "bg-surface2 text-sub hover:text-ink"}`} data-testid={`notif-cat-${c}`}>{c}</button>)}</div>
       <div className="flex-1 overflow-y-auto scroll-thin">
         {data && !items.length && <div className="p-10 text-center text-sm text-sub"><Bell className="mx-auto mb-2" size={22} />Semua sudah terbaca</div>}
         {items.map((n) => (

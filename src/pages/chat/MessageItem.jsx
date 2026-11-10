@@ -129,6 +129,10 @@ function AccessRequestCard({ m }) {
   const [assignedRole, setAssignedRole] = useState(req.assigned_role || req.job_title || "employee");
 
   useEffect(() => {
+    if (m.access_request) setReq(m.access_request);
+  }, [m.access_request]);
+
+  useEffect(() => {
     return subscribe((e) => {
       if (e.type === "access_requests:changed") {
         api.get("/admin/access-requests").then((res) => {
@@ -145,20 +149,24 @@ function AccessRequestCard({ m }) {
   const isRejected = req.status === "rejected";
 
   const handleApprove = async () => {
+    const prevReq = req;
+    const optimistic = {
+      ...req,
+      status: "approved",
+      approved_by: me?.name || "Admin",
+      approved_at: new Date().toISOString(),
+      assigned_role: assignedRole
+    };
+    setReq(optimistic);
     setBusy(true);
     try {
       await api.post(`/admin/access-requests/${req.id}/approve`, {
         role: assignedRole,
         department: req.department
       });
-      setReq((prev) => ({
-        ...prev,
-        status: "approved",
-        approved_by: me.name,
-        approved_at: new Date().toISOString()
-      }));
       toast.success(`Akses untuk ${req.name} berhasil disetujui!`);
     } catch (e) {
+      setReq(prevReq);
       toast.error(errMsg(e));
     } finally {
       setBusy(false);
@@ -167,17 +175,20 @@ function AccessRequestCard({ m }) {
 
   const handleReject = async () => {
     if (!window.confirm(`Tolak permohonan akses dari ${req.name}?`)) return;
+    const prevReq = req;
+    const optimistic = {
+      ...req,
+      status: "rejected",
+      rejected_by: me?.name || "Admin",
+      rejected_at: new Date().toISOString()
+    };
+    setReq(optimistic);
     setBusy(true);
     try {
       await api.post(`/admin/access-requests/${req.id}/reject`);
-      setReq((prev) => ({
-        ...prev,
-        status: "rejected",
-        rejected_by: me.name,
-        rejected_at: new Date().toISOString()
-      }));
       toast.info(`Permintaan akses ${req.name} ditolak.`);
     } catch (e) {
+      setReq(prevReq);
       toast.error(errMsg(e));
     } finally {
       setBusy(false);

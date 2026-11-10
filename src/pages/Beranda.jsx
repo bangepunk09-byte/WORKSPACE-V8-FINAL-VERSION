@@ -201,8 +201,8 @@ function Trending({ compact }) {
           <Link
             key={t.tag}
             to={`/beranda?tag=${t.tag}`}
-            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-              active === t.tag ? "bg-ink text-[var(--c-surface)]" : "bg-surface"
+            className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+              active === t.tag ? "border-brand bg-brand text-white shadow-xs" : "bg-surface hover:bg-surface2"
             }`}
           >
             #{t.tag}
@@ -266,8 +266,9 @@ function Feed() {
   const { subscribe } = useApp();
   const [params, setParams] = useSearchParams();
   const tag = params.get("tag") || "";
-  const [posts, setPosts] = useState(tag ? [] : POSTS_CACHE);
-  const [loading, setLoading] = useState(!posts.length);
+  const [posts, setPosts] = useState(() =>
+    tag ? POSTS_CACHE.filter((p) => (p.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)) : POSTS_CACHE
+  );
   const [more, setMore] = useState(true);
 
   const load = useCallback(() => {
@@ -276,16 +277,23 @@ function Feed() {
         if (Array.isArray(r.data)) {
           setPosts(r.data);
           setMore(r.data.length === 30);
-          if (!tag) localStorage.setItem("circle_cache_posts_feed", JSON.stringify(r.data));
+          if (!tag) {
+            POSTS_CACHE = r.data;
+            localStorage.setItem("circle_cache_posts_feed", JSON.stringify(r.data));
+          }
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-      });
+      .catch(() => {});
   }, [tag]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (tag) {
+      setPosts(POSTS_CACHE.filter((p) => (p.text || "").toLowerCase().includes(`#${tag.toLowerCase()}`)));
+    } else {
+      setPosts(POSTS_CACHE);
+    }
+    load();
+  }, [tag, load]);
   useEffect(() => subscribe((e) => e.type === "posts:changed" && load()), [subscribe, load]);
 
   const older = () =>
@@ -316,9 +324,7 @@ function Feed() {
           </div>
         )}
         <Composer onPosted={(p) => setPosts((ps) => [p, ...(ps || []).filter((x) => x.id !== p.id)])} />
-        {loading && !posts.length ? (
-          <div className="flex py-20 items-center justify-center"><Spinner label="Postingan" /></div>
-        ) : !posts.length ? (
+        {!posts.length ? (
           <p className="py-10 text-center text-sm text-sub" data-testid="feed-empty">
             {tag ? `Belum ada postingan dengan #${tag}.` : "Belum ada postingan. Jadilah yang pertama!"}
           </p>
@@ -345,23 +351,30 @@ function Feed() {
 function Thread({ pid }) {
   const { subscribe } = useApp();
   const navigate = useNavigate();
-  const [t, setT] = useState(null);
-  const load = useCallback(() => api.get(`/posts/${pid}`).then((r) => setT(r.data)).catch(() => setT(false)), [pid]);
-  useEffect(() => { load(); }, [load]);
+  const [t, setT] = useState(() => {
+    const cached = POSTS_CACHE.find((x) => x.id === pid);
+    return cached ? { ...cached, replies: cached.replies || [] } : null;
+  });
+  const load = useCallback(() => api.get(`/posts/${pid}`).then((r) => setT(r.data)).catch(() => setT((prev) => prev || false)), [pid]);
+  useEffect(() => {
+    const cached = POSTS_CACHE.find((x) => x.id === pid);
+    if (cached) setT({ ...cached, replies: cached.replies || [] });
+    load();
+  }, [pid, load]);
   useEffect(() => subscribe((e) => e.type === "posts:changed" && load()), [subscribe, load]);
-  if (t === null) return <Spinner />;
-  if (t === false) return <p className="py-10 text-center text-sm text-sub">Postingan tidak ditemukan.</p>;
-  const updReply = (np) => setT({ ...t, replies: t.replies.map((r) => (r.id === np.id ? { ...r, ...np } : r)) });
+  if (!t) return <p className="py-10 text-center text-sm text-sub">Postingan tidak ditemukan.</p>;
+  const replies = t.replies || [];
+  const updReply = (np) => setT({ ...t, replies: replies.map((r) => (r.id === np.id ? { ...r, ...np } : r)) });
   return (
     <div className="space-y-4" data-testid="post-thread">
       <button onClick={() => navigate("/beranda")} className="flex items-center gap-1.5 text-sm font-semibold text-sub hover:text-ink" data-testid="thread-back-btn"><ArrowLeft size={16} />Beranda</button>
       <PostCard p={t} onChange={(np) => setT({ ...t, ...np })} onDelete={() => navigate("/beranda")} />
       <div className="card px-4" data-testid="thread-replies">
-        <p className="border-b py-3 text-sm font-bold">{t.replies.length} balasan</p>
-        <div className="divide-y">{t.replies.map((r) => <PostCard key={r.id} p={r} reply onChange={updReply} onDelete={(id) => setT({ ...t, replies: t.replies.filter((x) => x.id !== id) })} />)}</div>
-        {!t.replies.length && <p className="py-6 text-center text-sm text-sub">Belum ada balasan.</p>}
+        <p className="border-b py-3 text-sm font-bold">{replies.length} balasan</p>
+        <div className="divide-y">{replies.map((r) => <PostCard key={r.id} p={r} reply onChange={updReply} onDelete={(id) => setT({ ...t, replies: replies.filter((x) => x.id !== id) })} />)}</div>
+        {!replies.length && <p className="py-6 text-center text-sm text-sub">Belum ada balasan.</p>}
       </div>
-      <Composer parentId={t.id} placeholder="Balas postingan ini…" onPosted={(r) => setT((x) => ({ ...x, reply_count: x.reply_count + 1, replies: [...x.replies.filter((y) => y.id !== r.id), r] }))} />
+      <Composer parentId={t.id} placeholder="Balas postingan ini…" onPosted={(r) => setT((x) => ({ ...x, reply_count: (x.reply_count || 0) + 1, replies: [...(x.replies || []).filter((y) => y.id !== r.id), r] }))} />
     </div>
   );
 }

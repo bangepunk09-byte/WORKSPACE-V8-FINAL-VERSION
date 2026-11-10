@@ -17,8 +17,25 @@ export default function SearchDialog({ open, onOpenChange }) {
   const [res, setRes] = useState(null);
   const navigate = useNavigate();
   useEffect(() => {
-    if (!q.trim()) { setRes(null); return undefined; }
-    const t = setTimeout(() => api.get("/search", { params: { q } }).then((r) => setRes(r.data)).catch(() => {}), 220);
+    const qTrim = q.trim();
+    if (!qTrim) { setRes(null); return undefined; }
+    const ql = qTrim.toLowerCase();
+    // Instant 0ms local search from cached data
+    try {
+      const users = JSON.parse(localStorage.getItem("circle_users_cache") || "[]");
+      const tasks = JSON.parse(localStorage.getItem("circle_tasks_cache") || "[]");
+      const groups = JSON.parse(localStorage.getItem("circle_groups_cache") || "[]");
+      const projects = JSON.parse(localStorage.getItem("circle_projects_cache") || "[]");
+      setRes({
+        employees: users.filter((u) => !u.is_bot && `${u.name} ${u.job_title} ${u.department}`.toLowerCase().includes(ql)).slice(0, 5),
+        tasks: tasks.filter((t) => `${t.title} ${t.number_str}`.toLowerCase().includes(ql)).slice(0, 5),
+        groups: groups.filter((g) => (g.name || "").toLowerCase().includes(ql)).slice(0, 5),
+        messages: [],
+        projects: projects.filter((p) => (p.name || "").toLowerCase().includes(ql)).slice(0, 5),
+        polls: []
+      });
+    } catch {}
+    const t = setTimeout(() => api.get("/search", { params: { q: qTrim } }).then((r) => setRes(r.data)).catch(() => {}), 80);
     return () => clearTimeout(t);
   }, [q]);
   const go = (path) => { onOpenChange(false); setQ(""); navigate(path); };

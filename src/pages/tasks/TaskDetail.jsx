@@ -35,31 +35,89 @@ function Comments({ t, reload }) {
   );
 }
 
+const getInitialTask = (id) => {
+  if (!id) return null;
+  try {
+    const c1 = localStorage.getItem("circle_tasks_cache");
+    if (c1) {
+      const arr = JSON.parse(c1);
+      const found = Array.isArray(arr) && arr.find((x) => x && x.id === id);
+      if (found) return found;
+    }
+    const c2 = localStorage.getItem("circle_cache_tasks");
+    if (c2) {
+      const arr = JSON.parse(c2);
+      const found = Array.isArray(arr) && arr.find((x) => x && x.id === id);
+      if (found) return found;
+    }
+  } catch {}
+  return INITIAL_TASKS.find((x) => x.id === id) || {
+    id,
+    number_str: "TSK",
+    title: "Detail Tugas",
+    status: "todo",
+    priority: "medium",
+    checkpoints: [],
+    comments: [],
+    activity: []
+  };
+};
+
 export default function TaskDetail({ id, onClose, onChanged }) {
   const { me, statuses, userMap, isManager } = useApp();
-  const [t, setT] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [boards, setBoards] = useState([]);
+  const [t, setT] = useState(() => getInitialTask(id));
+  const [projects, setProjects] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_projects_cache");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+  const [boards, setBoards] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_boards_cache");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
   const [editDesc, setEditDesc] = useState(false);
   const [desc, setDesc] = useState("");
   const [tab, setTab] = useState("comments");
   const [groups, setGroups] = useState(null);
   const navigate = useNavigate();
+
   const load = () => {
+    if (!id) return;
     api.get(`/tasks/${id}`)
-      .then((r) => setT(r.data))
+      .then((r) => {
+        if (r.data) setT(r.data);
+      })
       .catch(() => {
-        const local = INITIAL_TASKS.find((x) => x.id === id);
-        if (local) {
-          setT(local);
-        } else {
-          toast.error("Task not found");
-          onClose();
-        }
+        const local = getInitialTask(id);
+        if (local) setT(local);
       });
   };
-  useEffect(() => { if (id) { setT(null); setEditDesc(false); load(); api.get("/projects").then((r) => setProjects(r.data)); api.get("/boards").then((r) => setBoards(r.data)); } }, [id]); // eslint-disable-line
+  useEffect(() => {
+    if (id) {
+      setT(getInitialTask(id));
+      setEditDesc(false);
+      load();
+      api.get("/projects").then((r) => {
+        if (Array.isArray(r.data)) {
+          setProjects(r.data);
+          try { localStorage.setItem("circle_projects_cache", JSON.stringify(r.data)); } catch {}
+        }
+      }).catch(() => {});
+      api.get("/boards").then((r) => {
+        if (Array.isArray(r.data)) {
+          setBoards(r.data);
+          try { localStorage.setItem("circle_boards_cache", JSON.stringify(r.data)); } catch {}
+        }
+      }).catch(() => {});
+    }
+  }, [id]); // eslint-disable-line
   const patch = async (body, msg) => {
+    setT((prev) => (prev ? { ...prev, ...body, updated_at: new Date().toISOString() } : prev));
     try {
       const { data } = await api.patch(`/tasks/${id}`, body);
       setT(data);
@@ -72,6 +130,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
       if (msg) toast.success(msg);
     } catch (e) {
       toast.error(errMsg(e));
+      load();
     }
   };
   const setAtt = (fn) => patch({ attachments: fn(t.attachments) });
@@ -83,7 +142,11 @@ export default function TaskDetail({ id, onClose, onChanged }) {
   const reqIds = t?.requestor_ids && t.requestor_ids.length ? t.requestor_ids : (t?.requestor_id ? [t.requestor_id] : []);
   const revIds = t?.reviewer_ids && t.reviewer_ids.length ? t.reviewer_ids : reqIds;
   const reviewer = t && me?.user_id && (revIds.includes(me.user_id) || reqIds.includes(me.user_id));
-  const members = t?.board?.member_ids || [];
+  const boardMembers = boards.find((b) => b.id === t?.board_id)?.member_ids || t?.board?.member_ids || [];
+  const humanUserIds = Object.values(userMap || {})
+    .filter((u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant")
+    .map((u) => u.user_id);
+  const members = boardMembers.length > 0 ? boardMembers : humanUserIds;
   return (
     <Sheet open={!!id} onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-full overflow-y-auto bg-surface p-0 sm:max-w-2xl" data-testid="task-detail-panel">
@@ -240,9 +303,11 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                           className="h-7 rounded-full border bg-surface px-2 text-xs font-medium"
                         >
                           <option value="">+ Tambah Requestor</option>
-                          {Object.values(userMap).filter((u) => !reqIds.includes(u.user_id)).map((u) => (
-                            <option key={u.user_id} value={u.user_id}>{u.name}</option>
-                          ))}
+                          {Object.values(userMap || {})
+                            .filter((u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant" && !reqIds.includes(u.user_id))
+                            .map((u) => (
+                              <option key={u.user_id} value={u.user_id}>{u.name}</option>
+                            ))}
                         </select>
                       )}
                     </div>
@@ -334,9 +399,38 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                 </div>
               )}
               <section>
-                <div className="mb-3 flex gap-1 border-b text-sm font-semibold">{[["comments", MessageSquare, `Comments (${(t.comments || []).length})`], ["activity", History, "Activity"]].map(([k, I, l]) => <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 border-b-2 px-3 py-2 ${tab === k ? "border-[var(--c-accent)]" : "border-transparent text-sub"}`} data-testid={`task-tab-${k}`}><I size={14} />{l}</button>)}</div>
+                <div className="mb-3 flex gap-1 border-b text-sm font-semibold">{[["comments", MessageSquare, `Comments (${(t.comments || []).length})`], ["activity", History, `Activity (${(t.activity || []).length})`]].map(([k, I, l]) => <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 border-b-2 px-3 py-2 ${tab === k ? "border-[var(--c-accent)]" : "border-transparent text-sub"}`} data-testid={`task-tab-${k}`}><I size={14} />{l}</button>)}</div>
                 {tab === "comments" ? <Comments t={t} reload={load} /> : (
-                  <ul className="space-y-3" data-testid="task-activity">{(t.activity || []).map((a, i) => <li key={a.id || `act_${i}`} className="flex gap-2.5 text-sm"><Avatar user={userMap[a.actor_id]} size={24} showStatus={false} /><span><b>{userMap[a.actor_id]?.name}</b> <span className="text-sub">{a.action}</span>{a.changes?.from !== undefined && a.changes?.to !== undefined && typeof a.changes.to !== "object" && a.changes.to !== null && <span className="text-sub"> → <b className="text-ink">{userMap[a.changes.to]?.name || statuses.find((s) => s.key === a.changes.to)?.name || String(a.changes.to).slice(0, 40)}</b></span>}<span className="block text-[11px] text-sub">{fmtDate(a.created_at, "d MMM yyyy, HH:mm")}</span></span></li>)}</ul>
+                  (t.activity || []).length === 0 ? (
+                    <p className="py-4 text-center text-xs text-sub">Belum ada riwayat aktivitas pada tugas ini.</p>
+                  ) : (
+                    <ul className="space-y-3" data-testid="task-activity">
+                      {(t.activity || []).map((a, i) => (
+                        <li key={a.id || `act_${i}`} className="flex items-start gap-2.5 rounded-2xl border border-slate-200/70 dark:border-slate-800/80 bg-surface2/40 p-3 text-sm">
+                          <Avatar user={userMap[a.actor_id]} size={26} showStatus={false} className="mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <p className="leading-snug">
+                              <b className="text-ink">{userMap[a.actor_id]?.name || "User"}</b>{" "}
+                              <span className="text-sub">{a.action}</span>
+                              {!a.detail && a.changes?.from !== undefined && a.changes?.to !== undefined && typeof a.changes.to !== "object" && a.changes.to !== null && (
+                                <span className="text-sub">
+                                  {" "}→ <b className="text-ink">{userMap[a.changes.to]?.name || statuses.find((s) => s.key === a.changes.to)?.name || String(a.changes.to).slice(0, 80)}</b>
+                                </span>
+                              )}
+                            </p>
+                            {a.detail && (
+                              <div className="mt-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-surface px-3 py-2 text-xs text-ink/90 whitespace-pre-wrap break-words">
+                                {a.detail}
+                              </div>
+                            )}
+                            <span className="mt-1 block text-[11px] text-sub">
+                              {fmtDate(a.created_at, "d MMM yyyy, HH:mm:ss")} · {rel(a.created_at)}
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )
                 )}
               </section>
             </div>

@@ -12,15 +12,58 @@ export const inp = "h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outli
 
 export function UserSelect({ value, onChange, placeholder = "Unassigned", testid, ids }) {
   const { users } = useApp();
-  const list = ids ? users.filter((u) => ids.includes(u.user_id) || u.user_id === value) : users;
-  return <select value={value || ""} onChange={(e) => onChange(e.target.value || null)} className={inp} data-testid={testid}><option value="">{placeholder}</option>{list.map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>;
+  const humanUsers = (users || []).filter(
+    (u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+  );
+  const hasFilterIds = Array.isArray(ids) && ids.length > 0;
+  const filtered = hasFilterIds
+    ? humanUsers.filter((u) => ids.includes(u.user_id) || u.user_id === value)
+    : humanUsers;
+  const list = filtered.length > 0 ? filtered : humanUsers;
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value || null)}
+      className={inp}
+      data-testid={testid}
+    >
+      <option value="">{placeholder}</option>
+      {list.map((u) => (
+        <option key={u.user_id} value={u.user_id}>
+          {u.name}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih penanggung jawab / PIC (bisa >1 orang)...", ids, testid }) {
   const { users, userMap } = useApp();
-  const availableUsers = ids ? users.filter((u) => ids.includes(u.user_id)) : users;
-  const safeList = availableUsers.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant");
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const humanUsers = (users || []).filter(
+    (u) => u && !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+  );
+  const hasFilterIds = Array.isArray(ids) && ids.length > 0;
+  const safeList = hasFilterIds
+    ? [
+        ...humanUsers.filter((u) => ids.includes(u.user_id)),
+        ...humanUsers.filter((u) => !ids.includes(u.user_id))
+      ]
+    : humanUsers;
+
   const selectedIds = Array.isArray(value) ? value.filter(Boolean) : (value ? [value] : []);
+
+  const filteredList = safeList.filter((u) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      (u.name || "").toLowerCase().includes(q) ||
+      (u.department || "").toLowerCase().includes(q) ||
+      (u.job_title || "").toLowerCase().includes(q)
+    );
+  });
 
   const toggleUser = (uid) => {
     const next = selectedIds.includes(uid)
@@ -35,75 +78,121 @@ export function MultiUserSelect({ value = [], onChange, placeholder = "Pilih pen
   };
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex min-h-[42px] w-full flex-wrap items-center gap-1.5 rounded-xl border bg-surface2 px-2.5 py-1.5 text-left text-sm transition-colors hover:border-brand/40 focus:outline-none focus:ring-2 focus:ring-brand/20 cursor-pointer"
-          data-testid={testid}
-        >
-          {selectedIds.length > 0 ? (
-            selectedIds.map((uid) => {
-              const u = userMap[uid] || users.find((x) => x.user_id === uid);
-              if (!u) return null;
-              return (
-                <span
-                  key={uid}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 dark:bg-brand/20 px-2.5 py-1 text-xs font-semibold text-brand transition-all hover:bg-brand/15"
-                >
-                  <Avatar user={u} size={18} showStatus={false} />
-                  <span className="truncate max-w-[130px]">{u.name}</span>
-                  <span
-                    onClick={(e) => removeUser(e, uid)}
-                    className="ml-0.5 rounded-full p-0.5 hover:bg-brand/30 text-brand cursor-pointer"
-                    title={`Hapus ${u.name}`}
-                  >
-                    <X size={12} />
-                  </span>
-                </span>
-              );
-            })
-          ) : (
-            <span className="text-sub text-xs">{placeholder}</span>
-          )}
-          <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-brand px-2 py-0.5 rounded-md hover:bg-brand/10">
-            <Plus size={13} /> {selectedIds.length > 0 ? "Tambah orang" : "Pilih PIC"}
-          </span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 bg-surface p-2 shadow-xl rounded-2xl border border-slate-200 dark:border-slate-800" align="start">
-        <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase tracking-wider">
-          Pilih Penanggung Jawab ({selectedIds.length} orang terpilih)
-        </p>
-        <div className="mt-1 max-h-56 overflow-y-auto space-y-0.5">
-          {safeList.map((u) => {
-            const on = selectedIds.includes(u.user_id);
+    <div className="relative space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex min-h-[42px] w-full flex-wrap items-center gap-1.5 rounded-xl border bg-surface2 px-2.5 py-1.5 text-left text-sm transition-colors hover:border-brand/40 focus:outline-none focus:ring-2 focus:ring-brand/20 cursor-pointer"
+        data-testid={testid}
+      >
+        {selectedIds.length > 0 ? (
+          selectedIds.map((uid) => {
+            const u = userMap?.[uid] || humanUsers.find((x) => x.user_id === uid);
+            if (!u) return null;
             return (
-              <button
-                key={u.user_id}
-                type="button"
-                onClick={() => toggleUser(u.user_id)}
-                className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs transition-colors cursor-pointer ${
-                  on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-ink"
-                }`}
-                data-testid={`user-option-${u.user_id}`}
+              <span
+                key={uid}
+                className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 dark:bg-brand/20 px-2.5 py-1 text-xs font-semibold text-brand transition-all hover:bg-brand/15"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Avatar user={u} size={22} showStatus={false} />
-                  <div className="truncate text-left">
-                    <span className="block truncate font-medium">{u.name}</span>
-                    <span className="block text-[10px] text-sub">{u.job_title || u.department || "Member"}</span>
-                  </div>
-                </div>
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? "border-brand bg-brand text-white" : "border-slate-300 dark:border-slate-600"}`}>
-                  {on && <Check size={11} strokeWidth={3} />}
+                <Avatar user={u} size={18} showStatus={false} />
+                <span className="truncate max-w-[130px]">{u.name}</span>
+                <span
+                  onClick={(e) => removeUser(e, uid)}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-brand/30 text-brand cursor-pointer"
+                  title={`Hapus ${u.name}`}
+                >
+                  <X size={12} />
                 </span>
-              </button>
+              </span>
             );
-          })}
+          })
+        ) : (
+          <span className="text-sub text-xs">{placeholder}</span>
+        )}
+        <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-brand px-2 py-0.5 rounded-md hover:bg-brand/10">
+          <Plus size={13} /> {selectedIds.length > 0 ? "Tambah orang" : "Pilih PIC"}
+        </span>
+      </button>
+
+      {/* Quick one-click colleague pills for instant assignment */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {safeList.map((u) => {
+          const isSelected = selectedIds.includes(u.user_id);
+          return (
+            <button
+              key={u.user_id}
+              type="button"
+              onClick={() => toggleUser(u.user_id)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
+                isSelected
+                  ? "border-brand bg-brand text-white shadow-xs"
+                  : "border-slate-200 dark:border-slate-700 bg-surface hover:border-brand/50 hover:bg-surface2 text-ink"
+              }`}
+              data-testid={`quick-assign-${u.user_id}`}
+            >
+              <Avatar user={u} size={16} showStatus={false} />
+              <span>{u.name?.split(" ")[0] || u.name}</span>
+              {isSelected && <Check size={11} strokeWidth={3} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {open && (
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-surface p-2.5 shadow-xl space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <p className="text-[11px] font-bold text-sub uppercase tracking-wider">
+              Pilih Penanggung Jawab ({selectedIds.length} terpilih)
+            </p>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-lg px-2 py-0.5 text-xs font-semibold text-brand hover:bg-brand/10 cursor-pointer"
+            >
+              Selesai
+            </button>
+          </div>
+          {safeList.length > 4 && (
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari nama atau divisi..."
+              className="h-8 w-full rounded-xl border bg-surface2 px-2.5 text-xs outline-none focus:border-brand"
+            />
+          )}
+          <div className="max-h-52 overflow-y-auto space-y-0.5 pr-1">
+            {filteredList.map((u) => {
+              const on = selectedIds.includes(u.user_id);
+              return (
+                <button
+                  key={u.user_id}
+                  type="button"
+                  onClick={() => toggleUser(u.user_id)}
+                  className={`flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs transition-colors cursor-pointer ${
+                    on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2 text-ink"
+                  }`}
+                  data-testid={`user-option-${u.user_id}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Avatar user={u} size={22} showStatus={false} />
+                    <div className="truncate text-left">
+                      <span className="block truncate font-medium">{u.name}</span>
+                      <span className="block text-[10px] text-sub">{u.job_title || u.department || "Member"}</span>
+                    </div>
+                  </div>
+                  <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? "border-brand bg-brand text-white" : "border-slate-300 dark:border-slate-600"}`}>
+                    {on && <Check size={11} strokeWidth={3} />}
+                  </span>
+                </button>
+              );
+            })}
+            {filteredList.length === 0 && (
+              <p className="py-3 text-center text-xs text-sub">Tidak ada anggota yang cocok.</p>
+            )}
+          </div>
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </div>
   );
 }
 

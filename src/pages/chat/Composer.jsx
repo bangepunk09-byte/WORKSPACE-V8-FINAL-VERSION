@@ -187,8 +187,14 @@ export function StickerMaker({ onCreated, onClose }) {
   );
 }
 
+let STICKERS_CACHE = null;
+try {
+  const saved = localStorage.getItem("circle_stickers_cache");
+  if (saved) STICKERS_CACHE = JSON.parse(saved);
+} catch {}
+
 function StickerPicker({ onPick }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(STICKERS_CACHE);
   const [cat, setCat] = useState("Kerja & Memes");
   const [q, setQ] = useState("");
   const [makerOpen, setMakerOpen] = useState(false);
@@ -196,6 +202,8 @@ function StickerPicker({ onPick }) {
   const load = () =>
     api.get("/stickers").then((r) => {
       setData(r.data);
+      STICKERS_CACHE = r.data;
+      try { localStorage.setItem("circle_stickers_cache", JSON.stringify(r.data)); } catch {}
       if (r.data?.packs?.length) {
         setCat(r.data.packs[0]?.category || "Kerja & Memes");
       }
@@ -217,7 +225,7 @@ function StickerPicker({ onPick }) {
     );
   }
 
-  if (!data) return <div className="h-64 w-[320px] animate-pulse rounded-2xl bg-surface2" />;
+  if (!data) return <div className="h-64 w-[320px] rounded-2xl bg-surface2" />;
 
   const byId = Object.fromEntries((data.stickers || []).map((s) => [s.id, s]));
   const cats = [...new Set((data.packs || []).map((p) => p.category || p.name))];
@@ -321,7 +329,7 @@ function StickerPicker({ onPick }) {
 }
 
 export default function Composer({ conv, reply, onCancelReply, onSent, onPoll }) {
-  const { send, userMap } = useApp();
+  const { me, send, userMap } = useApp();
   const [text, setText] = useState("");
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -338,24 +346,45 @@ export default function Composer({ conv, reply, onCancelReply, onSent, onPoll })
   }, [text]);
 
   const post = async (body) => {
-    setBusy(true);
+    const tempId = `msg_opt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const optimisticMsg = {
+      id: tempId,
+      conversation_id: conv.id,
+      sender_id: me?.user_id || "user_admin1",
+      user_id: me?.user_id || "user_admin1",
+      text: body.text || "",
+      type: body.type || "text",
+      sticker_id: body.sticker_id || null,
+      sticker: body.sticker || null,
+      attachments: body.attachments || [],
+      reply_to: reply || null,
+      mention_ids: body.mention_ids || [],
+      created_at: new Date().toISOString(),
+      _optimistic: true
+    };
+    playSound("message");
+    onSent?.(optimisticMsg);
     try {
       const { data } = await api.post(`/conversations/${conv.id}/messages`, body);
-      playSound("message");
-      onSent?.(data);
+      onSent?.(data, tempId);
       return true;
     } catch (e) {
       toast.error(errMsg(e));
       return false;
-    } finally {
-      setBusy(false);
     }
   };
   const submit = async () => {
-    if (busy || (!text.trim() && !files.length)) return;
+    if (!text.trim() && !files.length) return;
     if (files.some((f) => f.uploading)) return toast("Wait for uploads to finish");
-    const ok = await post({ text, attachments: files.map((f) => ({ id: f.id })), reply_to: reply?.id, mention_ids: mentions.filter((m) => text.includes(`@${userMap[m]?.name}`)) });
-    if (ok) { setText(""); setFiles([]); setMentions([]); onCancelReply?.(); }
+    const msgText = text;
+    const msgFiles = files.map((f) => ({ id: f.id, name: f.name, content_type: f.content_type }));
+    const msgReply = reply?.id;
+    const msgMentions = mentions.filter((m) => msgText.includes(`@${userMap[m]?.name}`));
+    setText("");
+    setFiles([]);
+    setMentions([]);
+    onCancelReply?.();
+    await post({ text: msgText, attachments: msgFiles, reply_to: msgReply, mention_ids: msgMentions });
   };
   const onChange = (e) => {
     const v = e.target.value;

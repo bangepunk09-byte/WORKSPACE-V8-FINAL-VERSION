@@ -266,11 +266,33 @@ async function startServer() {
     if (!saefulAdmin.password) saefulAdmin.password = "AsliRi2026!";
   }
 
-  // Ensure default boards have department and member_ids
+  // Ensure default boards have department and all human workspace users in member_ids
+  const humanUserIds = (db.users || [])
+    .filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID)
+    .map((u: any) => u.user_id);
+
   if (Array.isArray(db.boards)) {
     db.boards.forEach((b: any) => {
       if (!b.department) b.department = "Semua Divisi";
-      if (!Array.isArray(b.member_ids)) b.member_ids = [];
+      const existingMembers = Array.isArray(b.member_ids)
+        ? b.member_ids.filter((id: string) => id !== CIRCLE_BOT_ID)
+        : [];
+      b.member_ids = Array.from(new Set([...existingMembers, ...humanUserIds]));
+    });
+  }
+
+  // Ensure all tasks have valid status, board_id, and synced assignee_ids
+  if (Array.isArray(db.tasks)) {
+    const defaultBoardId = db.boards?.[0]?.id || "brd_1";
+    db.tasks.forEach((t: any) => {
+      if (!t.status) t.status = "todo";
+      if (!t.board_id) t.board_id = defaultBoardId;
+      if (!t.priority) t.priority = "medium";
+      let aIds = Array.isArray(t.assignee_ids) ? [...t.assignee_ids] : [];
+      if (t.assignee_id && !aIds.includes(t.assignee_id)) aIds.unshift(t.assignee_id);
+      aIds = aIds.filter((id: string) => Boolean(id) && id !== CIRCLE_BOT_ID);
+      t.assignee_ids = aIds;
+      t.assignee_id = aIds[0] || null;
     });
   }
 
@@ -364,6 +386,7 @@ async function startServer() {
       g.name = og.name;
       g.is_verified = true;
       g.type = "group";
+      g.member_ids = (Array.isArray(g.member_ids) ? g.member_ids : humanUserIds).filter((id: string) => id !== CIRCLE_BOT_ID);
     } else {
       g = {
         id: groupId,
@@ -372,7 +395,7 @@ async function startServer() {
         group_type: "department",
         is_verified: true,
         created_at: new Date().toISOString(),
-        member_ids: db.users.map((u: any) => u.user_id),
+        member_ids: [...humanUserIds],
         type: "group"
       };
       db.groups.push(g);
@@ -387,9 +410,39 @@ async function startServer() {
       c.name = g.name;
       c.is_verified = true;
       c.type = "group";
-      if (!Array.isArray(c.member_ids)) c.member_ids = g.member_ids;
+      const baseMems = Array.isArray(c.member_ids) ? c.member_ids : g.member_ids;
+      c.member_ids = baseMems.filter((id: string) => id !== CIRCLE_BOT_ID);
+      if (Array.isArray(c.members)) {
+        c.members = c.members.filter((id: string) => id !== CIRCLE_BOT_ID);
+      }
     }
   });
+
+  // Remove Circle Assistant from ALL group conversations and groups (Circle is strictly a DM chat bot)
+  if (Array.isArray(db.groups)) {
+    db.groups.forEach((g: any) => {
+      if (Array.isArray(g.member_ids)) {
+        g.member_ids = g.member_ids.filter((id: string) => id !== CIRCLE_BOT_ID);
+      }
+      if (Array.isArray(g.members)) {
+        g.members = g.members.filter((id: string) => id !== CIRCLE_BOT_ID);
+      }
+      g.member_count = (g.member_ids || []).length;
+    });
+  }
+  if (Array.isArray(db.conversations)) {
+    db.conversations.forEach((c: any) => {
+      if (c && (c.type === "group" || c.group_type || String(c.id || "").startsWith("group_"))) {
+        if (Array.isArray(c.member_ids)) {
+          c.member_ids = c.member_ids.filter((id: string) => id !== CIRCLE_BOT_ID);
+        }
+        if (Array.isArray(c.members)) {
+          c.members = c.members.filter((id: string) => id !== CIRCLE_BOT_ID);
+        }
+      }
+    });
+  }
+  saveDbToFile();
 
   // Ensure default posts exist so Beranda has active trending hashtags and feed content
   if (!Array.isArray(db.posts) || db.posts.length === 0) {
@@ -618,7 +671,9 @@ async function startServer() {
     res.json({
       user: latestUser,
       workspace: db.workspace,
-      prefs: db.prefs[latestUser.user_id] || { theme_mode: "light" }
+      prefs: db.prefs[latestUser.user_id] || { theme_mode: "light" },
+      users: db.users,
+      labels: db.labels
     });
   });
 
@@ -1104,7 +1159,10 @@ async function startServer() {
   });
 
   app.patch("/api/users/:id", (req, res) => {
-    const user = db.users.find((u: any) => u.user_id === req.params.id);
+    let user = db.users.find((u: any) => u.user_id === req.params.id);
+    if (!user && (req.params.id === "me" || currentSessionUser)) {
+      user = db.users.find((u: any) => u.user_id === currentSessionUser?.user_id) || currentSessionUser || db.users[0];
+    }
     if (!user) return res.status(404).json({ detail: "User not found" });
     if (req.body.avatar && !req.body.picture) req.body.picture = req.body.avatar;
     if (req.body.picture && !req.body.avatar) req.body.avatar = req.body.picture;
@@ -1121,7 +1179,11 @@ async function startServer() {
     const user = db.users.find((u: any) => u.user_id === req.params.id);
     if (!user) return res.status(404).json({ detail: "User not found" });
     Object.assign(user, req.body);
+    if (currentSessionUser?.user_id === user.user_id) {
+      currentSessionUser = { ...currentSessionUser, ...req.body };
+    }
     saveDbToFile();
+    broadcast({ type: "users:changed", user });
     res.json(user);
   });
 
@@ -1389,16 +1451,34 @@ async function startServer() {
     assigneeIds = assigneeIds.filter(Boolean);
     const primaryAssigneeId = assigneeIds[0] || null;
 
+    const creatorId = currentSessionUser?.user_id || "user_admin1";
+    const initAct = {
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      actor_id: creatorId,
+      action: `membuat tugas baru "${req.body.title || taskNum}"`,
+      detail: req.body.description ? `Brief awal: "${String(req.body.description).replace(/<[^>]*>?/gm, "").trim().slice(0, 120)}"` : undefined,
+      task_id: `tsk_${Date.now()}`,
+      task_title: req.body.title,
+      created_at: new Date().toISOString()
+    };
+
+    const validStatuses = (db.workspace?.task_statuses || []).map((s: any) => s.key);
+    const resolvedStatus = req.body.status && (validStatuses.length === 0 || validStatuses.includes(req.body.status))
+      ? req.body.status
+      : (validStatuses[0] || "todo");
+    const resolvedBoardId = req.body.board_id || db.boards?.[0]?.id || "brd_1";
+
     const t = {
-      id: `tsk_${Date.now()}`,
+      id: initAct.task_id,
       number_str: taskNum,
       comments: [],
       subtasks: [],
       attachments: [],
       checkpoints: cps,
+      activity: [initAct],
       progress,
       archived: false,
-      created_by: currentSessionUser?.user_id || "user_admin1",
+      created_by: creatorId,
       requestor_ids: reqIds,
       reviewer_ids: reqIds, // Reviewer otomatis sama dengan requestor
       approvals: {
@@ -1407,27 +1487,27 @@ async function startServer() {
         status: "pending"
       },
       ...req.body,
+      status: resolvedStatus,
+      priority: req.body.priority || "medium",
+      board_id: resolvedBoardId,
       assignee_id: primaryAssigneeId,
       assignee_ids: assigneeIds,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    if (!Array.isArray(t.activity) || t.activity.length === 0) {
+      t.activity = [initAct];
+    }
     db.tasks.unshift(t);
-    db.activity.unshift({
-      id: `act_${Date.now()}`,
-      actor_id: currentSessionUser?.user_id || "user_admin1",
-      action: "created task",
-      task_id: t.id,
-      task_title: t.title,
-      created_at: new Date().toISOString()
-    });
+    db.activity.unshift(initAct);
     db.audit_logs.unshift({
       id: `log_${Date.now()}`,
-      actor_id: currentSessionUser?.user_id || "user_admin1",
+      actor_id: creatorId,
       actor_name: currentSessionUser?.name || "User",
       action: `membuat tugas baru: ${t.number_str} - ${t.title}`,
       created_at: new Date().toISOString()
     });
+    saveDbToFile();
     broadcast({ type: "tasks:changed", task: t });
 
     // Notify all assigned users
@@ -1554,6 +1634,7 @@ async function startServer() {
         }
       });
     }
+    saveDbToFile();
     broadcast({ type: "tasks:changed" });
     res.json({ updated });
   });
@@ -1576,47 +1657,291 @@ async function startServer() {
   app.get("/api/tasks/:id", (req, res) => {
     const t = db.tasks.find((x: any) => x.id === req.params.id);
     if (!t) return res.status(404).json({ detail: "Task not found" });
-    res.json(t);
+    const board = db.boards?.find((b: any) => b.id === t.board_id) || db.boards?.[0] || null;
+    res.json({ ...t, board });
   });
 
   app.patch("/api/tasks/:id", (req, res) => {
     const t = db.tasks.find((x: any) => x.id === req.params.id);
     if (!t) return res.status(404).json({ detail: "Task not found" });
 
+    const actorId = currentSessionUser?.user_id || "user_admin1";
+    const actorName = currentSessionUser?.name || "User";
+    const getUserName = (uid: string | null | undefined) => {
+      if (!uid) return "Unassigned";
+      return db.users.find((u: any) => u.user_id === uid)?.name || uid;
+    };
+    const getStatusName = (key: string | null | undefined) => {
+      if (!key) return "—";
+      return db.statuses?.find((s: any) => s.key === key)?.name || key;
+    };
+    const getBoardName = (bid: string | null | undefined) => {
+      if (!bid) return "—";
+      return db.boards?.find((b: any) => b.id === bid)?.name || bid;
+    };
+    const getProjectName = (pid: string | null | undefined) => {
+      if (!pid) return "No project";
+      return db.projects?.find((p: any) => p.id === pid)?.name || pid;
+    };
+    const getLabelNames = (lids: string[] | undefined) => {
+      if (!Array.isArray(lids) || !lids.length) return "Kosong";
+      return lids.map((id) => db.labels?.find((l: any) => l.id === id)?.name || id).join(", ");
+    };
+    const stripHtml = (html: string | undefined | null) => String(html || "").replace(/<[^>]*>?/gm, "").trim();
+
+    const recordTaskActivity = (action: string, detail?: string, changes?: { field?: string; from?: any; to?: any }) => {
+      const nowIso = new Date().toISOString();
+      const act = {
+        id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        actor_id: actorId,
+        action,
+        detail,
+        changes,
+        task_id: t.id,
+        task_title: t.title,
+        created_at: nowIso
+      };
+      t.activity = Array.isArray(t.activity) ? t.activity : [];
+      t.activity.unshift(act);
+      db.activity.unshift(act);
+      db.audit_logs.unshift({
+        id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        actor_id: actorId,
+        actor_name: actorName,
+        action: `${action} (${t.number_str || t.title})${detail ? ` — ${detail}` : ""}`,
+        created_at: nowIso
+      });
+    };
+
     // Reviewer otomatis sinkron dengan requestor
     if (req.body.requestor_ids) {
       req.body.reviewer_ids = req.body.requestor_ids;
     }
 
-    // Checkpoint completion tracking
+    // 1. Title change
+    if (req.body.title !== undefined && req.body.title !== t.title) {
+      recordTaskActivity(
+        `mengubah judul tugas`,
+        `Dari "${t.title || "—"}" menjadi "${req.body.title}"`,
+        { field: "title", from: t.title, to: req.body.title }
+      );
+    }
+
+    // 2. Brief / Description change
+    if (req.body.description !== undefined && req.body.description !== t.description) {
+      const oldBrief = stripHtml(t.description);
+      const newBrief = stripHtml(req.body.description);
+      if (oldBrief !== newBrief) {
+        const summaryText = newBrief
+          ? (oldBrief ? `Dari: "${oldBrief.slice(0, 100)}${oldBrief.length > 100 ? "…" : ""}" → Menjadi: "${newBrief.slice(0, 140)}${newBrief.length > 140 ? "…" : ""}"` : `Isi brief: "${newBrief.slice(0, 150)}${newBrief.length > 150 ? "…" : ""}"`)
+          : "Brief dikosongkan";
+        recordTaskActivity(
+          oldBrief ? `mengubah brief tugas` : `menulis brief tugas`,
+          summaryText,
+          { field: "description", from: oldBrief || "Kosong", to: newBrief || "Kosong" }
+        );
+      }
+    }
+
+    // 3. Status change
+    if (req.body.status !== undefined && req.body.status !== t.status) {
+      recordTaskActivity(
+        `mengubah status tugas dari "${getStatusName(t.status)}" ke "${getStatusName(req.body.status)}"`,
+        undefined,
+        { field: "status", from: getStatusName(t.status), to: getStatusName(req.body.status) }
+      );
+    }
+
+    // 4. Priority change
+    if (req.body.priority !== undefined && req.body.priority !== t.priority) {
+      recordTaskActivity(
+        `mengubah prioritas tugas dari "${t.priority || "medium"}" ke "${req.body.priority}"`,
+        undefined,
+        { field: "priority", from: t.priority, to: req.body.priority }
+      );
+    }
+
+    // 5. Board change
+    if (req.body.board_id !== undefined && req.body.board_id !== t.board_id) {
+      recordTaskActivity(
+        `memindahkan tugas dari board "${getBoardName(t.board_id)}" ke "${getBoardName(req.body.board_id)}"`,
+        undefined,
+        { field: "board_id", from: getBoardName(t.board_id), to: getBoardName(req.body.board_id) }
+      );
+    }
+
+    // 6. Project change
+    if (req.body.project_id !== undefined && req.body.project_id !== t.project_id) {
+      recordTaskActivity(
+        `mengubah project dari "${getProjectName(t.project_id)}" ke "${getProjectName(req.body.project_id)}"`,
+        undefined,
+        { field: "project_id", from: getProjectName(t.project_id), to: getProjectName(req.body.project_id) }
+      );
+    }
+
+    // 7. Department change
+    if (req.body.department !== undefined && req.body.department !== (t.department || "")) {
+      recordTaskActivity(
+        `mengubah departemen dari "${t.department || "Kosong"}" ke "${req.body.department || "Kosong"}"`,
+        undefined,
+        { field: "department", from: t.department || "Kosong", to: req.body.department || "Kosong" }
+      );
+    }
+
+    // 8. Item type change
+    if (req.body.item_type !== undefined && req.body.item_type !== (t.item_type || "")) {
+      recordTaskActivity(
+        `mengubah tipe item dari "${t.item_type || "Kosong"}" ke "${req.body.item_type || "Kosong"}"`,
+        undefined,
+        { field: "item_type", from: t.item_type || "Kosong", to: req.body.item_type || "Kosong" }
+      );
+    }
+
+    // 9. Link file/folder change
+    if (req.body.link_url !== undefined && req.body.link_url !== (t.link_url || "")) {
+      recordTaskActivity(
+        req.body.link_url ? `memperbarui link file/folder` : `menghapus link file/folder`,
+        req.body.link_url ? `Link: ${req.body.link_url}` : `Sebelumnya: ${t.link_url}`,
+        { field: "link_url", from: t.link_url || "Kosong", to: req.body.link_url || "Kosong" }
+      );
+    }
+
+    // 10. Deadline change
+    if (req.body.deadline !== undefined && req.body.deadline !== t.deadline) {
+      const oldDl = t.deadline ? String(t.deadline).slice(0, 16).replace("T", " ") : "Kosong";
+      const newDl = req.body.deadline ? String(req.body.deadline).slice(0, 16).replace("T", " ") : "Kosong";
+      recordTaskActivity(
+        `mengubah tenggat waktu (deadline) dari "${oldDl}" ke "${newDl}"`,
+        undefined,
+        { field: "deadline", from: oldDl, to: newDl }
+      );
+    }
+
+    // 11. Start date change
+    if (req.body.start_date !== undefined && req.body.start_date !== (t.start_date || null)) {
+      recordTaskActivity(
+        `mengubah tanggal mulai (start date) dari "${t.start_date || "Kosong"}" ke "${req.body.start_date || "Kosong"}"`,
+        undefined,
+        { field: "start_date", from: t.start_date || "Kosong", to: req.body.start_date || "Kosong" }
+      );
+    }
+
+    // 12. Submit date change
+    if (req.body.submit_date !== undefined && req.body.submit_date !== (t.submit_date || null)) {
+      recordTaskActivity(
+        `mengubah tanggal submit dari "${t.submit_date || "Kosong"}" ke "${req.body.submit_date || "Kosong"}"`,
+        undefined,
+        { field: "submit_date", from: t.submit_date || "Kosong", to: req.body.submit_date || "Kosong" }
+      );
+    }
+
+    // 13. IP / Brand labels change
+    if (Array.isArray(req.body.label_ids)) {
+      const oldL = JSON.stringify([...(t.label_ids || [])].sort());
+      const newL = JSON.stringify([...req.body.label_ids].sort());
+      if (oldL !== newL) {
+        recordTaskActivity(
+          `mengubah IP / Brand label`,
+          `Dari [${getLabelNames(t.label_ids)}] menjadi [${getLabelNames(req.body.label_ids)}]`,
+          { field: "label_ids", from: getLabelNames(t.label_ids), to: getLabelNames(req.body.label_ids) }
+        );
+      }
+    }
+
+    // 14. Card color / style change
+    if (req.body.card_color !== undefined && req.body.card_color !== t.card_color) {
+      recordTaskActivity(
+        req.body.card_color ? `mengubah warna kartu menjadi ${req.body.card_color}` : `mereset warna kartu`,
+        undefined,
+        { field: "card_color", from: t.card_color || "Default", to: req.body.card_color || "Default" }
+      );
+    }
+    if (req.body.card_style !== undefined && req.body.card_style !== t.card_style) {
+      recordTaskActivity(
+        `mengubah gaya tampilan warna kartu ke "${req.body.card_style}"`,
+        undefined,
+        { field: "card_style", from: t.card_style || "bar", to: req.body.card_style }
+      );
+    }
+
+    // 15. Requestor / Reviewer change
+    if (Array.isArray(req.body.requestor_ids)) {
+      const oldReq = (t.requestor_ids || []).map(getUserName).join(", ") || "Kosong";
+      const newReq = req.body.requestor_ids.map(getUserName).join(", ") || "Kosong";
+      if (oldReq !== newReq) {
+        recordTaskActivity(
+          `memperbarui daftar Requestor & Reviewer`,
+          `Dari [${oldReq}] menjadi [${newReq}]`,
+          { field: "requestor_ids", from: oldReq, to: newReq }
+        );
+      }
+    }
+
+    // 16. Attachments change
+    if (Array.isArray(req.body.attachments)) {
+      const oldAtt = t.attachments || [];
+      const newAtt = req.body.attachments;
+      if (newAtt.length > oldAtt.length) {
+        const added = newAtt.filter((na: any) => !oldAtt.some((oa: any) => oa.id === na.id));
+        const names = added.map((a: any) => a.name || "File").join(", ");
+        recordTaskActivity(`menambahkan lampiran file "${names}"`, `Total lampiran: ${newAtt.length}`);
+      } else if (newAtt.length < oldAtt.length) {
+        const removed = oldAtt.filter((oa: any) => !newAtt.some((na: any) => na.id === oa.id));
+        const names = removed.map((a: any) => a.name || "File").join(", ");
+        recordTaskActivity(`menghapus lampiran file "${names}"`, `Total lampiran: ${newAtt.length}`);
+      }
+    }
+
+    // 17. Checkpoint granular tracking (add, delete, rename, PIC change, done/undone)
     if (Array.isArray(req.body.checkpoints)) {
       const oldCheckpoints = t.checkpoints || [];
       const newCheckpoints = req.body.checkpoints;
 
+      // Added checkpoints
+      const addedCps = newCheckpoints.filter((nc: any) => !oldCheckpoints.some((oc: any) => oc.id === nc.id));
+      if (addedCps.length === 1) {
+        recordTaskActivity(
+          `menambahkan checkpoint baru "${addedCps[0].title || 'Checkpoint'}"`,
+          addedCps[0].assignee_id ? `PIC: ${getUserName(addedCps[0].assignee_id)}` : undefined
+        );
+      } else if (addedCps.length > 1) {
+        recordTaskActivity(
+          `menambahkan ${addedCps.length} checkpoint baru`,
+          addedCps.map((c: any) => c.title).join(", ")
+        );
+      }
+
+      // Removed checkpoints
+      const removedCps = oldCheckpoints.filter((oc: any) => !newCheckpoints.some((nc: any) => nc.id === oc.id));
+      removedCps.forEach((rc: any) => {
+        recordTaskActivity(`menghapus checkpoint "${rc.title || 'Checkpoint'}"`);
+      });
+
+      // Modified existing checkpoints
       newCheckpoints.forEach((newCp: any) => {
         const oldCp = oldCheckpoints.find((c: any) => c.id === newCp.id);
-        // If checkpoint was newly completed
-        if (newCp.done && (!oldCp || !oldCp.done)) {
-          const act = {
-            id: `act_${Date.now()}`,
-            actor_id: currentSessionUser?.user_id || "user_admin1",
-            action: `menyelesaikan checkpoint "${newCp.title || 'Poin Checklist'}" pada tugas`,
-            task_id: t.id,
-            task_title: t.title,
-            created_at: new Date().toISOString()
-          };
-          db.activity.unshift(act);
+        if (!oldCp) return;
 
-          db.audit_logs.unshift({
-            id: `log_${Date.now()}`,
-            actor_id: currentSessionUser?.user_id || "user_admin1",
-            actor_name: currentSessionUser?.name || "User",
-            action: `menyelesaikan checkpoint "${newCp.title}" pada tugas ${t.number_str || t.title}`,
-            created_at: new Date().toISOString()
-          });
+        if (newCp.done && !oldCp.done) {
+          recordTaskActivity(`menyelesaikan checkpoint "${newCp.title || 'Poin Checklist'}" pada tugas`);
+        } else if (!newCp.done && oldCp.done) {
+          recordTaskActivity(`membuka kembali (uncheck) checkpoint "${newCp.title || 'Poin Checklist'}"`);
+        }
 
-          t.activity = t.activity || [];
-          t.activity.unshift(act);
+        if (newCp.title !== oldCp.title) {
+          recordTaskActivity(
+            `mengubah nama checkpoint`,
+            `Dari "${oldCp.title}" menjadi "${newCp.title}"`,
+            { field: "checkpoint_title", from: oldCp.title, to: newCp.title }
+          );
+        }
+
+        if ((newCp.assignee_id || null) !== (oldCp.assignee_id || null)) {
+          recordTaskActivity(
+            `mengubah PIC checkpoint "${newCp.title}"`,
+            `Dari ${getUserName(oldCp.assignee_id)} ke ${getUserName(newCp.assignee_id)}`,
+            { field: "checkpoint_pic", from: getUserName(oldCp.assignee_id), to: getUserName(newCp.assignee_id) }
+          );
         }
       });
 
@@ -1630,14 +1955,16 @@ async function startServer() {
       req.body.completed_at = new Date().toISOString();
       if (!req.body.checkpoints) req.body.progress = 100;
     }
-    // If unarchived
-    if (req.body.archived === false) {
+    // Archive / Unarchive tracking
+    if (req.body.archived === false && t.archived === true) {
       t.archived = false;
+      recordTaskActivity(`memulihkan (unarchive) tugas kembali ke board aktif`);
     }
-    if (req.body.archived === true) {
+    if (req.body.archived === true && !t.archived) {
       t.archived = true;
       t.archived_at = t.archived_at || new Date().toISOString();
       t.archived_month = t.archived_month || new Date().toISOString().slice(0, 7);
+      recordTaskActivity(`mengarsipkan tugas ke folder ${t.archived_month}`);
     }
 
     const oldAssignees: string[] = Array.isArray(t.assignee_ids) && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
@@ -1646,6 +1973,18 @@ async function startServer() {
       req.body.assignee_id = req.body.assignee_ids[0] || null;
     } else if (req.body.assignee_id !== undefined && !req.body.assignee_ids) {
       req.body.assignee_ids = req.body.assignee_id ? [req.body.assignee_id] : [];
+    }
+
+    if (req.body.assignee_ids !== undefined) {
+      const oldNames = oldAssignees.map(getUserName).join(", ") || "Unassigned";
+      const newNames = (req.body.assignee_ids || []).map(getUserName).join(", ") || "Unassigned";
+      if (oldNames !== newNames) {
+        recordTaskActivity(
+          `mengubah Assignee tugas`,
+          `Dari [${oldNames}] menjadi [${newNames}]`,
+          { field: "assignee_ids", from: oldNames, to: newNames }
+        );
+      }
     }
 
     const oldStatus = t.status;
@@ -1689,14 +2028,17 @@ async function startServer() {
       });
     }
 
+    saveDbToFile();
     broadcast({ type: "tasks:changed", task: t });
-    res.json(t);
+    const board = db.boards?.find((b: any) => b.id === t.board_id) || db.boards?.[0] || null;
+    res.json({ ...t, board });
   });
 
   app.delete("/api/tasks/:id", (req, res) => {
     const idx = db.tasks.findIndex((x: any) => x.id === req.params.id);
     if (idx === -1) return res.status(404).json({ detail: "Task not found" });
     const deleted = db.tasks.splice(idx, 1)[0];
+    saveDbToFile();
     broadcast({ type: "tasks:changed", deleted_id: req.params.id });
     res.json({ success: true, task: deleted });
   });
@@ -1705,24 +2047,80 @@ async function startServer() {
     const t = db.tasks.find((x: any) => x.id === req.params.id);
     if (!t) return res.status(404).json({ detail: "Task not found" });
     t.comments = t.comments || [];
-    const c = { id: `cmt_${Date.now()}`, user_id: currentSessionUser?.user_id, ...req.body, created_at: new Date().toISOString() };
+    const actorId = currentSessionUser?.user_id || "user_admin1";
+    const c = {
+      id: `cmt_${Date.now()}`,
+      user_id: actorId,
+      author_id: actorId,
+      ...req.body,
+      created_at: new Date().toISOString()
+    };
     t.comments.push(c);
 
+    const cp = c.checkpoint_id ? (t.checkpoints || []).find((x: any) => x.id === c.checkpoint_id) : null;
+    const isIssue = c.kind === "issue";
+    const act = {
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      actor_id: actorId,
+      action: isIssue
+        ? `melaporkan kendala${cp ? ` pada checkpoint "${cp.title}"` : ""}`
+        : `menambahkan komentar${cp ? ` pada checkpoint "${cp.title}"` : ""}`,
+      detail: c.text ? `"${String(c.text).slice(0, 140)}"` : undefined,
+      task_id: t.id,
+      task_title: t.title,
+      created_at: new Date().toISOString()
+    };
+    t.activity = Array.isArray(t.activity) ? t.activity : [];
+    t.activity.unshift(act);
+    db.activity.unshift(act);
+
     // Notify task creator and assignee
-    const usersToNotify = new Set([t.created_by, t.assignee_id].filter(id => id && id !== currentSessionUser?.user_id));
+    const usersToNotify = new Set([t.created_by, t.assignee_id].filter(id => id && id !== actorId));
     usersToNotify.forEach(userId => {
       createNotification({
         user_id: userId as string,
-        title: "Komentar Baru pada Tugas",
+        title: isIssue ? "Kendala Dilaporkan pada Tugas" : "Komentar Baru pada Tugas",
         body: `${currentSessionUser?.name || "Seseorang"} berkomentar di "${t.title}": ${c.text || "Pesan"}`,
         type: "task_comment",
         category: "tasks",
-        actor_id: currentSessionUser?.user_id,
+        actor_id: actorId,
         link: `/tasks?id=${t.id}`,
         task_id: t.id
       });
     });
 
+    broadcast({ type: "tasks:changed", task: t });
+    res.json(c);
+  });
+
+  app.patch("/api/tasks/:id/comments/:commentId", (req, res) => {
+    const t = db.tasks.find((x: any) => x.id === req.params.id);
+    if (!t) return res.status(404).json({ detail: "Task not found" });
+    const c = (t.comments || []).find((x: any) => x.id === req.params.commentId);
+    if (!c) return res.status(404).json({ detail: "Comment not found" });
+
+    const actorId = currentSessionUser?.user_id || "user_admin1";
+    Object.assign(c, req.body);
+
+    const cp = c.checkpoint_id ? (t.checkpoints || []).find((x: any) => x.id === c.checkpoint_id) : null;
+    if (req.body.resolved !== undefined) {
+      const act = {
+        id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        actor_id: actorId,
+        action: req.body.resolved
+          ? `menandai kendala selesai${cp ? ` pada checkpoint "${cp.title}"` : ""}`
+          : `membuka kembali kendala${cp ? ` pada checkpoint "${cp.title}"` : ""}`,
+        detail: c.text ? `"${String(c.text).slice(0, 120)}"` : undefined,
+        task_id: t.id,
+        task_title: t.title,
+        created_at: new Date().toISOString()
+      };
+      t.activity = Array.isArray(t.activity) ? t.activity : [];
+      t.activity.unshift(act);
+      db.activity.unshift(act);
+    }
+
+    broadcast({ type: "tasks:changed", task: t });
     res.json(c);
   });
 
@@ -1860,30 +2258,36 @@ async function startServer() {
   // Groups & Channels Endpoints
   app.get("/api/groups/browse", (req, res) => {
     const userId = currentSessionUser?.user_id;
-    const list = db.groups.map((g: any) => ({
-      ...g,
-      is_member: (g.member_ids || []).includes(userId),
-      member_count: (g.member_ids || []).length
-    }));
+    const list = db.groups.map((g: any) => {
+      const mems = (g.member_ids || []).filter((id: string) => id !== CIRCLE_BOT_ID);
+      return {
+        ...g,
+        member_ids: mems,
+        is_member: mems.includes(userId),
+        member_count: mems.length
+      };
+    });
     res.json(list);
   });
 
-
-
   app.post("/api/groups", (req, res) => {
     const isVerified = currentSessionUser?.role === "super_admin";
+    const creatorId = currentSessionUser?.user_id || "user_admin1";
+    const rawMembers = Array.isArray(req.body.member_ids) ? req.body.member_ids : [];
+    const cleanMembers = Array.from(new Set([creatorId, ...rawMembers])).filter((id: any) => Boolean(id) && id !== CIRCLE_BOT_ID);
     const g = { 
       id: `conv_${Date.now()}`, 
-      member_count: 1, 
       is_member: true, 
       is_verified: isVerified,
-      created_by: currentSessionUser?.user_id,
-      member_ids: [currentSessionUser?.user_id],
+      created_by: creatorId,
       type: "group",
-      ...req.body 
+      ...req.body,
+      member_ids: cleanMembers,
+      member_count: cleanMembers.length
     };
     db.groups.push(g);
     db.conversations.push(g);
+    saveDbToFile();
     res.json(g);
   });
 
@@ -2327,16 +2731,33 @@ async function startServer() {
     const userId = currentSessionUser?.user_id;
     if (!userId) return res.status(401).json({ detail: "Unauthorized" });
 
+    const reqMap = new Map((db.access_requests || []).map((r: any) => [r.id, r]));
+
     const list = db.conversations
       .filter((c: any) => {
         const mems = c.member_ids || c.members || [];
         return mems.includes(userId);
       })
-      .map((c: any) => ({
-        ...c,
-        member_ids: c.member_ids || c.members || [],
-        members: c.members || c.member_ids || []
-      }));
+      .map((c: any) => {
+        const rawMems = c.member_ids || c.members || [];
+        const cleanMems = c.type === "group" ? rawMems.filter((id: string) => id !== CIRCLE_BOT_ID) : rawMems;
+        const convMsgs = (db.messages || [])
+          .filter((m: any) => m.conversation_id === c.id)
+          .slice(-50)
+          .map((m: any) => ({
+            ...m,
+            sender_id: m.sender_id || m.user_id || "user_admin1",
+            access_request: m.access_request?.id && reqMap.has(m.access_request.id)
+              ? reqMap.get(m.access_request.id)
+              : m.access_request
+          }));
+        return {
+          ...c,
+          member_ids: cleanMems,
+          members: cleanMems,
+          messages: convMsgs
+        };
+      });
     res.json(list);
   });
 
@@ -2378,7 +2799,9 @@ async function startServer() {
           id: 'conv_1',
           type: "group",
           name: "General",
-          member_ids: db.users.map((u: any) => u.user_id),
+          member_ids: db.users
+            .filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== CIRCLE_BOT_ID)
+            .map((u: any) => u.user_id),
           admin_ids: ["user_admin1"],
           unread: 0,
           is_member: true
@@ -2389,7 +2812,8 @@ async function startServer() {
       }
     }
 
-    const mems = c.member_ids || c.members || [];
+    const rawMems = c.member_ids || c.members || [];
+    const mems = c.type === "group" ? rawMems.filter((id: string) => id !== CIRCLE_BOT_ID) : rawMems;
     if (!mems.includes(userId)) {
       return res.status(403).json({ detail: "You are not a member of this conversation" });
     }
@@ -2426,9 +2850,13 @@ async function startServer() {
     if (before) {
       list = list.filter((m: any) => new Date(m.created_at) < new Date(String(before)));
     }
+    const reqMap = new Map((db.access_requests || []).map((r: any) => [r.id, r]));
     list = list.map((m: any) => ({
       ...m,
-      sender_id: m.sender_id || m.user_id || "user_admin1"
+      sender_id: m.sender_id || m.user_id || "user_admin1",
+      access_request: m.access_request?.id && reqMap.has(m.access_request.id)
+        ? reqMap.get(m.access_request.id)
+        : m.access_request
     }));
     res.json(list);
   });
@@ -2492,10 +2920,10 @@ async function startServer() {
       });
     }
 
-    // Advanced AI Copilot auto-reply for Circle Assistant
+    // Instant AI Copilot auto-reply for Circle Assistant (zero artificial delay)
     const isCircleDM = conv && conv.type === "dm" && (conv.member_ids?.includes("user_circle_assistant") || conv.members?.includes("user_circle_assistant"));
     if (isCircleDM && sender_id !== "user_circle_assistant") {
-      setTimeout(() => {
+      setImmediate(() => {
         const textLower = (msg.text || "").toLowerCase();
         let replyText = "";
         if (textLower.includes("ringkasan") || textLower.includes("briefing") || textLower.includes("status") || textLower.includes("laporan") || textLower.includes("task")) {
@@ -2539,7 +2967,7 @@ async function startServer() {
         broadcast({ type: "message:new", data: botMsg });
         broadcast({ type: "conversations:changed" });
         saveDbToFile();
-      }, 600);
+      });
     }
 
     res.json(msg);
@@ -2621,10 +3049,13 @@ async function startServer() {
     [db.groups, db.conversations].forEach(list => {
       const g = list.find((x: any) => x.id === req.params.id);
       if (g) {
-        g.member_ids = g.member_ids || [];
-        if (req.body.add) g.member_ids = Array.from(new Set([...g.member_ids, ...req.body.add]));
+        g.member_ids = (g.member_ids || []).filter((id: string) => id !== CIRCLE_BOT_ID);
+        if (req.body.add) {
+          const validAdd = (Array.isArray(req.body.add) ? req.body.add : []).filter((id: string) => id !== CIRCLE_BOT_ID);
+          g.member_ids = Array.from(new Set([...g.member_ids, ...validAdd]));
+        }
         if (req.body.remove) g.member_ids = g.member_ids.filter((x: any) => !req.body.remove.includes(x));
-        if (req.body.admin_id) {
+        if (req.body.admin_id && req.body.admin_id !== CIRCLE_BOT_ID) {
           g.admin_ids = g.admin_ids || [];
           if (req.body.make_admin) {
             if (!g.admin_ids.includes(req.body.admin_id)) g.admin_ids.push(req.body.admin_id);
@@ -2634,6 +3065,7 @@ async function startServer() {
         }
       }
     });
+    saveDbToFile();
     res.json({ success: true });
   });
 
@@ -2814,14 +3246,17 @@ async function startServer() {
       broadcast({ type: "message:new", data: msg });
     }
 
-    db.activity.unshift({
-      id: `act_${Date.now()}`,
+    const shareAct = {
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       actor_id: currentSessionUser?.user_id || "user_admin1",
       action: `mengirimkan preview tugas ke grup untuk review & approval (status: In Review)`,
       task_id: task.id,
       task_title: task.title,
       created_at: new Date().toISOString()
-    });
+    };
+    task.activity = Array.isArray(task.activity) ? task.activity : [];
+    task.activity.unshift(shareAct);
+    db.activity.unshift(shareAct);
 
     db.audit_logs.unshift({
       id: `log_${Date.now()}`,
@@ -2850,6 +3285,8 @@ async function startServer() {
       revision_note: ""
     };
 
+    task.activity = Array.isArray(task.activity) ? task.activity : [];
+
     if (decision === "approve") {
       if (!task.approvals.approved_by.includes(userId)) {
         task.approvals.approved_by.push(userId);
@@ -2862,14 +3299,16 @@ async function startServer() {
         task.progress = 100;
         task.approvals.status = "approved";
 
-        db.activity.unshift({
-          id: `act_${Date.now()}`,
+        const finalAct = {
+          id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           actor_id: userId,
           action: `memberikan approval final (2/2) untuk tugas. Tugas otomatis selesai (Done)!`,
           task_id: task.id,
           task_title: task.title,
           created_at: new Date().toISOString()
-        });
+        };
+        task.activity.unshift(finalAct);
+        db.activity.unshift(finalAct);
 
         db.audit_logs.unshift({
           id: `log_${Date.now()}`,
@@ -2880,14 +3319,16 @@ async function startServer() {
         });
       } else {
         task.approvals.status = "partial";
-        db.activity.unshift({
-          id: `act_${Date.now()}`,
+        const partAct = {
+          id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           actor_id: userId,
           action: `menyetujui tugas (1/2 approval terkumpul)`,
           task_id: task.id,
           task_title: task.title,
           created_at: new Date().toISOString()
-        });
+        };
+        task.activity.unshift(partAct);
+        db.activity.unshift(partAct);
       }
     } else if (decision === "revise") {
       task.status = "in_progress";
@@ -2895,14 +3336,17 @@ async function startServer() {
       task.approvals.revised_by = userId;
       task.approvals.revision_note = note || "Mohon periksa kembali dan revisi.";
 
-      db.activity.unshift({
-        id: `act_${Date.now()}`,
+      const revAct = {
+        id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         actor_id: userId,
-        action: `meminta revisi pada tugas: "${note || 'Perlu perbaikan'}" (status kembali In Progress)`,
+        action: `meminta revisi pada tugas (status kembali In Progress)`,
+        detail: `Catatan revisi: "${note || 'Perlu perbaikan'}"`,
         task_id: task.id,
         task_title: task.title,
         created_at: new Date().toISOString()
-      });
+      };
+      task.activity.unshift(revAct);
+      db.activity.unshift(revAct);
 
       db.audit_logs.unshift({
         id: `log_${Date.now()}`,
@@ -3067,26 +3511,39 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.put("/api/settings/task-config", (req, res) => {
+  const handleTaskConfig = (req: any, res: any) => {
     if (req.body.task_statuses) db.workspace.task_statuses = req.body.task_statuses;
     if (req.body.task_fields) db.workspace.task_fields = req.body.task_fields;
     saveDbToFile();
+    broadcast({ type: "workspace:changed" });
     res.json(db.workspace);
-  });
+  };
+  app.put("/api/settings/task-config", handleTaskConfig);
+  app.patch("/api/settings/task-config", handleTaskConfig);
 
-  app.put("/api/settings/profile-fields", (req, res) => {
+  const handleProfileFields = (req: any, res: any) => {
     if (req.body.fields) db.workspace.profile_fields = req.body.fields;
     if (req.body.field_visibility) db.workspace.field_visibility = req.body.field_visibility;
     saveDbToFile();
+    broadcast({ type: "workspace:changed" });
     res.json(db.workspace);
+  };
+  app.put("/api/settings/profile-fields", handleProfileFields);
+  app.patch("/api/settings/profile-fields", handleProfileFields);
+
+  app.post("/api/reports/weekly/test", (req, res) => {
+    const email = currentSessionUser?.email || "admin@asliri.id";
+    res.json({ success: true, sent_to: email });
   });
 
   app.get("/api/workspace", (req, res) => {
     res.json(db.workspace);
   });
 
-  app.patch("/api/workspace", (req, res) => {
+  const handleWorkspaceUpdate = (req: any, res: any) => {
     db.workspace = { ...db.workspace, ...req.body };
+    if (req.body.name && !req.body.brand_name) db.workspace.brand_name = req.body.name;
+    if (req.body.brand_name && !req.body.name) db.workspace.name = req.body.brand_name;
     const circleBot = db.users.find((u: any) => u.user_id === "user_circle_assistant");
     if (circleBot) {
       if (db.workspace.assistant_name) circleBot.name = db.workspace.assistant_name;
@@ -3100,7 +3557,9 @@ async function startServer() {
     broadcast({ type: "workspace:changed" });
     broadcast({ type: "users:changed" });
     res.json(db.workspace);
-  });
+  };
+  app.patch("/api/workspace", handleWorkspaceUpdate);
+  app.put("/api/workspace", handleWorkspaceUpdate);
 
   app.get("/api/item-types", (req, res) => {
     res.json(db.workspace.item_types || DEFAULT_WORKSPACE_ITEM_TYPES);
@@ -3129,12 +3588,14 @@ async function startServer() {
     res.json(existing);
   });
 
-  app.put("/api/prefs", (req, res) => {
+  const handlePrefsUpdate = (req: any, res: any) => {
     const uid = currentSessionUser?.user_id || "default";
     db.prefs[uid] = { ...(db.prefs[uid] || {}), ...req.body };
     saveDbToFile();
     res.json(db.prefs[uid]);
-  });
+  };
+  app.put("/api/prefs", handlePrefsUpdate);
+  app.patch("/api/prefs", handlePrefsUpdate);
 
   app.get("/api/public/branding", (req, res) => {
     res.json({
