@@ -24,7 +24,7 @@ export default function Directory() {
   const chip = (on) => `h-10 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors ${on ? "bg-brand text-white" : "border bg-surface text-sub hover:text-ink"}`;
   
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="directory-page">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="directory-page">
       <PageHeader icon={Users} title="Employee Directory" subtitle={loading ? "Memuat data karyawan..." : `${list.length} dari ${humanUsers.length} orang`} />
       <div className="mb-6 flex flex-wrap items-center gap-2" data-testid="division-tabs">
         <button onClick={() => setSel([])} className={chip(!sel.length)} data-testid="division-tab-all">Semua</button>

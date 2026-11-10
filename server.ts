@@ -1889,17 +1889,28 @@ async function startServer() {
 
   // Team Stats Endpoint for MonthlyStats / TeamPerformance
   app.get("/api/stats/team", (req, res) => {
+    const range = (req.query.range as string) || "7d";
     const now = new Date();
-    const dayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday, 6 for Sunday
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - dayOfWeek);
-    const week = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      return d.toISOString().slice(0, 10);
-    });
     const todayStr = now.toISOString().slice(0, 10);
     const anchor = (req.query.anchor as string) || todayStr;
+
+    let week: string[] = [];
+    if (range === "4w") {
+      week = Array.from({ length: 30 }, (_, i) => {
+        const d = new Date(now);
+        d.setDate(now.getDate() - (29 - i));
+        return d.toISOString().slice(0, 10);
+      });
+    } else {
+      const dayOfWeek = (now.getDay() + 6) % 7; // 0 for Monday, 6 for Sunday
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - dayOfWeek);
+      week = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        return d.toISOString().slice(0, 10);
+      });
+    }
 
     // Real dynamic task stats
     const totalTasks = db.tasks.length;
@@ -1908,6 +1919,7 @@ async function startServer() {
 
     const onTimeRate = totalTasks > 0 ? Math.round(((totalTasks - overdueTasks.length) / totalTasks) * 100) : 100;
 
+    const dayOfWeek = (now.getDay() + 6) % 7;
     const series = week.map((d, idx) => {
       // Find tasks completed on this date or matching deadline
       const matchedDone = db.tasks.filter((t: any) => {
@@ -1920,8 +1932,8 @@ async function startServer() {
         return deadDate === d && t.status !== "done" && !t.archived && new Date(t.deadline) < now;
       }).length;
 
-      // Realistic weekly progression
-      const doneVal = matchedDone > 0 ? matchedDone : (doneTasks.length > 0 && idx <= dayOfWeek ? Math.max(0, doneTasks.length - Math.max(0, dayOfWeek - idx)) : 0);
+      // Realistic weekly progression for 7d vs daily progression for 4w
+      const doneVal = matchedDone > 0 ? matchedDone : (range === "7d" && doneTasks.length > 0 && idx <= dayOfWeek ? Math.max(0, doneTasks.length - Math.max(0, dayOfWeek - idx)) : matchedDone);
       const overdueVal = matchedOverdue;
 
       return {
@@ -1961,7 +1973,7 @@ async function startServer() {
     res.json({
       today: todayStr,
       anchor,
-      range: (req.query.range as string) || "7d",
+      range,
       summary: {
         done: doneTasks.length,
         overdue: overdueTasks.length,

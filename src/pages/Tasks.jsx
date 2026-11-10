@@ -559,5 +559,5 @@ export function TaskWorkspace({ projectId, compactHeader }) {
 }
 
 export default function Tasks() {
-  return <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="tasks-page"><TaskWorkspace /></div>;
+  return <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="tasks-page"><TaskWorkspace /></div>;
 }

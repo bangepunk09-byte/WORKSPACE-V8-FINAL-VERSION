@@ -5,7 +5,7 @@ import { id as localeId } from "date-fns/locale";
 import { toast } from "sonner";
 import { api, errMsg } from "../lib/api";
 import { useApp } from "../context/AppContext";
-import { Avatar, AccentButton, GhostButton, Spinner } from "../components/common";
+import { Avatar, AccentButton, GhostButton, Spinner, PageHeader } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../components/ui/dialog";
 import { playSound } from "../lib/sound";
 import { listEvents, createEvent } from "../lib/calendar";
@@ -215,24 +215,18 @@ export default function Schedule() {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-rise" data-testid="schedule-page">
-      {/* Header */}
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl text-ink">
-            {t("schedule_title")}
-          </h1>
-          <p className="mt-1 text-sm text-sub">
-            {t("schedule_subtitle")}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-rise" data-testid="schedule-page">
+      <PageHeader
+        icon={CalendarIcon}
+        title={t("schedule_title")}
+        subtitle={t("schedule_subtitle")}
+        actions={
           <AccentButton onClick={() => openCreateDialog()} data-testid="new-meeting-btn">
             <Plus size={16} />
             {t("schedule_new_meeting")}
           </AccentButton>
-        </div>
-      </div>
+        }
+      />
 
       {/* Mini Calendar Strip */}
       <div className="mb-6 rounded-3xl border bg-surface p-2 shadow-sm">
@@ -297,7 +291,7 @@ export default function Schedule() {
       {/* Meetings List */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-ink flex items-center gap-2">
+          <h2 className="text-sm font-bold text-ink flex items-center gap-2">
             <span>Daftar Pertemuan</span>
             <span className="rounded-full bg-surface2 px-2.5 py-0.5 text-xs text-sub font-semibold">
               {filteredMeetings.length}
@@ -316,7 +310,7 @@ export default function Schedule() {
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface2 text-sub">
               <CalendarIcon size={28} />
             </div>
-            <h3 className="mt-4 text-base font-bold">Tidak ada meeting yang dijadwalkan</h3>
+            <h3 className="mt-4 text-sm font-bold">Tidak ada meeting yang dijadwalkan</h3>
             <p className="mt-1 max-w-sm text-xs text-sub">
               Jadwalkan rapat bersama tim sekarang. Langsung terintegrasi dengan Google Calendar.
             </p>
@@ -368,7 +362,7 @@ export default function Schedule() {
                       </button>
                     </div>
 
-                    <h3 className="mt-3 text-base font-bold text-ink line-clamp-2">{m.title}</h3>
+                    <h3 className="mt-3 text-sm font-bold text-ink line-clamp-2">{m.title}</h3>
                     {m.description && (
                       <p className="mt-1 text-xs text-sub line-clamp-2">{m.description}</p>
                     )}

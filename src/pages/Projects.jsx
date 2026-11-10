@@ -142,7 +142,7 @@ export default function Projects() {
     }
   }, [pid]); // eslint-disable-line
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="projects-page">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="projects-page">
       {pid ? <Detail pid={pid} /> : <>
         <PageHeader icon={FolderKanban} title="Projects" subtitle="Progress is calculated from real task data." actions={<AccentButton onClick={() => setOpen(true)} data-testid="new-project-btn"><Plus size={16} />New project</AccentButton>} />
         {loading && !list.length ? <div className="flex py-20 items-center justify-center"><Spinner label="Projects" /></div> : !list.length ? <Empty icon={FolderKanban} title="No projects yet" /> : (

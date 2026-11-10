@@ -44,18 +44,29 @@ const INITIAL_DATA = {
   people: FALLBACK_PEOPLE
 };
 
-let statsMemoryCache = null;
+let statsMemoryCache = { "7d": null, "4w": null };
 
-function getCachedStats() {
-  if (statsMemoryCache) return statsMemoryCache;
+function isValidStats(d) {
+  return Boolean(d && typeof d === "object" && d.summary && typeof d.summary === "object" && Array.isArray(d.series) && Array.isArray(d.people));
+}
+
+function getCachedStats(rRange) {
+  if (isValidStats(statsMemoryCache[rRange])) return statsMemoryCache[rRange];
   try {
-    const cached = localStorage.getItem("circle_stats_team_cache");
+    const cached = localStorage.getItem(`circle_stats_team_cache_${rRange}`);
     if (cached) {
       const parsed = JSON.parse(cached);
-      if (parsed && Array.isArray(parsed.people) && parsed.people.length > 0) {
-        statsMemoryCache = parsed;
+      if (isValidStats(parsed)) {
+        statsMemoryCache[rRange] = parsed;
         return parsed;
       }
+    }
+  } catch {}
+  try {
+    const generalCached = localStorage.getItem("circle_stats_team_cache");
+    if (generalCached) {
+      const parsed = JSON.parse(generalCached);
+      if (isValidStats(parsed)) return parsed;
     }
   } catch {}
   return INITIAL_DATA;
@@ -91,11 +102,12 @@ function StatCard({ label, value, note, tone, icon: Icon, testid }) {
 }
 
 function TeamChart({ data, type }) {
-  const rows = (data.series || []).map((s, i) => {
+  const safeData = data || INITIAL_DATA;
+  const rows = (safeData.series || []).map((s, i) => {
     const d = new Date(`${s.start}T00:00:00`);
-    const future = s.start > data.today;
+    const future = s.start > safeData.today;
     return {
-      name: data.range === "4w" ? `${d.getDate()} ${MON[d.getMonth()]}` : (WD_FULL[i] || s.name || s.start),
+      name: safeData.range === "4w" ? `${d.getDate()} ${MON[d.getMonth()]}` : (WD_FULL[i] || s.name || s.start),
       Selesai: future ? null : (s.done ?? s.Selesai ?? 0),
       Overdue: future ? null : (s.overdue ?? s.Overdue ?? 0)
     };
@@ -103,10 +115,10 @@ function TeamChart({ data, type }) {
   const common = { data: rows, margin: { top: 10, right: 12, left: -18, bottom: 0 } };
   const axes = [<CartesianGrid key="g" strokeDasharray="3 6" vertical={false} stroke="var(--c-border, #E5E7EB)" />, <XAxis key="x" dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--c-sub, #7A8194)" }} />, <YAxis key="y" allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--c-sub, #7A8194)" }} />, <Tooltip key="t" cursor={{ fill: "rgba(0,0,0,0.04)" }} contentStyle={{ borderRadius: 12, border: "1px solid #E5E7EB", fontSize: 12 }} />];
   return (
-    <div className="h-64 sm:h-72 min-h-[260px] w-full" data-testid="team-chart">
+    <div className="h-64 sm:h-72 min-h-[260px] w-full transition-all duration-300" data-testid="team-chart">
       <ResponsiveContainer width="100%" height={260} debounce={50}>
-        {type === "line" ? <LineChart {...common}>{axes}<Line type="monotone" dataKey="Selesai" stroke={GREEN} strokeWidth={3} dot={{ r: 3 }} isAnimationActive={false} /><Line type="monotone" dataKey="Overdue" stroke={RED} strokeWidth={3} dot={{ r: 3 }} isAnimationActive={false} /></LineChart>
-          : <BarChart {...common}>{axes}<Bar dataKey="Selesai" fill={GREEN} radius={[6, 6, 0, 0]} maxBarSize={28} isAnimationActive={false} /><Bar dataKey="Overdue" fill={RED} radius={[6, 6, 0, 0]} maxBarSize={28} isAnimationActive={false} /></BarChart>}
+        {type === "line" ? <LineChart {...common}>{axes}<Line type="monotone" dataKey="Selesai" stroke={GREEN} strokeWidth={3} dot={{ r: safeData.range === "4w" ? 2 : 3 }} isAnimationActive={true} animationDuration={300} /><Line type="monotone" dataKey="Overdue" stroke={RED} strokeWidth={3} dot={{ r: safeData.range === "4w" ? 2 : 3 }} isAnimationActive={true} animationDuration={300} /></LineChart>
+          : <BarChart {...common}>{axes}<Bar dataKey="Selesai" fill={GREEN} radius={[6, 6, 0, 0]} maxBarSize={safeData.range === "4w" ? 14 : 28} isAnimationActive={true} animationDuration={300} /><Bar dataKey="Overdue" fill={RED} radius={[6, 6, 0, 0]} maxBarSize={safeData.range === "4w" ? 14 : 28} isAnimationActive={true} animationDuration={300} /></BarChart>}
       </ResponsiveContainer>
     </div>
   );
@@ -116,21 +128,21 @@ const Dot = ({ c, label }) => <span className="flex items-center gap-2 text-sm t
 
 function TeamPerformance({ data, anchor, setAnchor, range, setRange }) {
   const [type, setType] = useState("line");
-  const s = data.summary;
+  const s = data?.summary || INITIAL_DATA.summary;
   return (
     <section className="card min-w-0 p-5 sm:p-6 md:col-span-2 xl:col-span-3" data-testid="widget-stats">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div><h3 className="flex items-center gap-2.5 text-xl font-bold"><TrendingUp size={20} className="text-emerald-500" />Performa & Beban Kerja Tim</h3><p className="mt-1 text-sm text-sub">Monitoring penyelesaian tugas dan ketepatan waktu operasional.</p></div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
           <div className="flex flex-wrap gap-2">
-            <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setRange("7d")} className={seg(range === "7d")} data-testid="team-range-7d">7 Hari</button><button onClick={() => setRange("4w")} className={seg(range === "4w")} data-testid="team-range-4w">4 Minggu</button></div>
+            <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setRange("7d")} className={seg(range === "7d")} data-testid="team-range-7d">7 Hari</button><button onClick={() => setRange("4w")} className={seg(range === "4w")} data-testid="team-range-4w">1 Bulan terakhir</button></div>
             <div className="flex rounded-2xl bg-surface2 p-1"><button onClick={() => setType("line")} className={`${seg(type === "line")} px-2.5`} aria-label="Grafik garis" data-testid="team-chart-line"><LineIcon size={16} /></button><button onClick={() => setType("bar")} className={`${seg(type === "bar")} px-2.5`} aria-label="Grafik batang" data-testid="team-chart-bar"><BarChart3 size={16} /></button></div>
           </div>
         </div>
       </div>
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard tone="green" label="Tugas Selesai" value={s.done} note={s.done ? `${s.done} tugas diselesaikan` : "Belum ada tugas selesai"} icon={CheckCircle2} testid="team-stat-done" />
-        <StatCard tone="red" label="Lewat Tenggat" value={s.overdue} note={s.overdue ? `${s.overdue} tugas melewati deadline` : "Tidak ada keterlambatan"} icon={AlertTriangle} testid="team-stat-overdue" />
+        <StatCard tone="green" label="Tugas Selesai" value={s.done ?? 0} note={s.done ? `${s.done} tugas diselesaikan` : "Belum ada tugas selesai"} icon={CheckCircle2} testid="team-stat-done" />
+        <StatCard tone="red" label="Lewat Tenggat" value={s.overdue ?? 0} note={s.overdue ? `${s.overdue} tugas melewati deadline` : "Tidak ada keterlambatan"} icon={AlertTriangle} testid="team-stat-overdue" />
         <StatCard tone="gray" label="Ketepatan Waktu" value={`${s.on_time_rate ?? 0}%`} note={s.due ? `${s.on_time} dari ${s.due} tugas tepat waktu` : "Belum ada data tugas"} icon={Target} testid="team-stat-ontime" />
       </div>
       <div className="mt-6 flex justify-end gap-5"><Dot c={GREEN} label="Tasks Selesai" /><Dot c={RED} label="Tasks Overdue" /></div>
@@ -143,20 +155,21 @@ function TeamPerformance({ data, anchor, setAnchor, range, setRange }) {
 function PersonCard({ p }) {
   const { userMap } = useApp();
   const navigate = useNavigate();
-  const usr = userMap[p.user_id];
-  const [emo, lbl, cls] = STATUS[p.status];
+  const usr = userMap?.[p.user_id];
+  const [emo, lbl, cls] = STATUS[p.status] || STATUS.optimal;
+  const tasks = Array.isArray(p.tasks) ? p.tasks : [];
   const dm = async () => { const { data } = await api.post("/conversations/dm", { user_id: p.user_id }); navigate(`/messages/${data.id}`); };
   return (
     <div className="flex min-w-0 flex-col rounded-3xl border bg-surface p-5 transition-shadow hover:shadow-md" data-testid={`person-card-${p.user_id}`}>
       <div className="flex items-start gap-3">
         <Avatar user={usr} size={52} />
         <div className="min-w-0 flex-1"><p className="truncate font-bold">{usr?.name}</p><p className="truncate text-sm text-sub">{usr?.job_title || "—"}</p><p className="truncate text-xs text-sub opacity-80">{usr?.department || "Tanpa divisi"}</p></div>
-        <span className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${cls}`} title={`${p.day_deadlines} deadline pada hari terpilih`} data-testid={`person-status-${p.user_id}`}>{emo} {lbl}</span>
+        <span className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${cls}`} title={`${p.day_deadlines ?? 0} deadline pada hari terpilih`} data-testid={`person-status-${p.user_id}`}>{emo} {lbl}</span>
       </div>
-      <div className="mt-4 flex justify-between text-sm"><span className="font-medium text-sub">Beban Tugas Aktif</span><span className="font-semibold" data-testid={`person-load-${p.user_id}`}>{p.active} tugas ({p.share}%)</span></div>
-      <span className="mt-2 block h-2 overflow-hidden rounded-full bg-surface2"><span className="block h-full rounded-full bg-[#2563EB] transition-[width] duration-700" style={{ width: `${p.share}%` }} /></span>
+      <div className="mt-4 flex justify-between text-sm"><span className="font-medium text-sub">Beban Tugas Aktif</span><span className="font-semibold" data-testid={`person-load-${p.user_id}`}>{p.active ?? 0} tugas ({p.share ?? 0}%)</span></div>
+      <span className="mt-2 block h-2 overflow-hidden rounded-full bg-surface2"><span className="block h-full rounded-full bg-[#2563EB] transition-[width] duration-700" style={{ width: `${p.share ?? 0}%` }} /></span>
       <p className="mt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-sub">Tugas sedang berjalan:</p>
-      <div className="mt-2 flex-1 space-y-1">{p.tasks.length ? p.tasks.map((t) => <Link key={t.id} to={`/tasks?task=${t.id}`} className="block truncate text-sm hover:text-brand">• {t.title}</Link>) : <p className="text-sm italic text-sub">Tidak ada tugas aktif saat ini.</p>}{p.more > 0 && <p className="text-xs text-sub">+{p.more} tugas lainnya</p>}</div>
+      <div className="mt-2 flex-1 space-y-1">{tasks.length ? tasks.map((t) => <Link key={t.id} to={`/tasks?task=${t.id}`} className="block truncate text-sm hover:text-brand">• {t.title}</Link>) : <p className="text-sm italic text-sub">Tidak ada tugas aktif saat ini.</p>}{(p.more ?? 0) > 0 && <p className="text-xs text-sub">+{p.more} tugas lainnya</p>}</div>
       <div className="mt-4 flex items-center justify-between border-t pt-4">
         <button onClick={dm} className="flex items-center gap-1.5 text-sm font-semibold" data-testid={`person-message-${p.user_id}`}><MessageSquare size={15} />Kirim Pesan</button>
         <Link to={`/tasks?assignee=${p.user_id}&kanban=1`} className="flex items-center gap-1 text-sm font-semibold text-[#2563EB]" data-testid={`person-kanban-${p.user_id}`}>Lihat di Kanban<ArrowRight size={14} /></Link>
@@ -169,9 +182,10 @@ function Personnel({ data }) {
   const { userMap } = useApp();
   const [div, setDiv] = useState("");
   const [all, setAll] = useState(false);
-  const depts = [...new Set(data.people.map((p) => userMap[p.user_id]?.department).filter(Boolean))].sort();
-  const people = data.people.filter((p) => {
-    const u = userMap[p.user_id];
+  const rawPeople = Array.isArray(data?.people) ? data.people : INITIAL_DATA.people;
+  const depts = [...new Set(rawPeople.map((p) => userMap?.[p.user_id]?.department).filter(Boolean))].sort();
+  const people = rawPeople.filter((p) => {
+    const u = userMap?.[p.user_id];
     if (!u || u.is_bot || u.role === "assistant" || p.user_id === "user_circle_assistant") return false;
     return !div || u.department === div;
   });
@@ -196,34 +210,37 @@ function Personnel({ data }) {
 export default function MonthlyStats({ showPerformance = true, showPersonnel = true }) {
   const [anchor, setAnchor] = useState(null);
   const [range, setRange] = useState("7d");
-  const [data, setData] = useState(getCachedStats);
-  const [loading, setLoading] = useState(!statsMemoryCache);
+  const [data, setData] = useState(() => getCachedStats("7d"));
 
-  const load = useCallback(() => {
-    if (!data || (data === INITIAL_DATA && !statsMemoryCache)) setLoading(true);
-    api.get("/stats/team", { params: { range, ...(anchor ? { anchor } : {}) } })
-      .then((r) => {
-        if (r.data) {
-          statsMemoryCache = r.data;
-          setData(r.data);
+  const load = useCallback((targetRange) => {
+    const r = targetRange || range;
+    const cached = getCachedStats(r);
+    if (cached) setData(cached);
+
+    api.get("/stats/team", { params: { range: r, ...(anchor ? { anchor } : {}) } })
+      .then((res) => {
+        if (isValidStats(res.data)) {
+          statsMemoryCache[r] = res.data;
+          setData(res.data);
           try {
-            localStorage.setItem("circle_stats_team_cache", JSON.stringify(r.data));
+            localStorage.setItem(`circle_stats_team_cache_${r}`, JSON.stringify(res.data));
+            localStorage.setItem("circle_stats_team_cache", JSON.stringify(res.data));
           } catch {}
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [anchor, range, data]);
+      .catch(() => {});
+  }, [anchor, range]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load(range);
+  }, [range, load]);
 
   if (!showPerformance && !showPersonnel) return null;
-  if (loading && (!data || data === INITIAL_DATA)) return <div className="flex h-48 items-center justify-center rounded-3xl border border-dashed bg-surface/50"><span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-brand" /></div>;
 
   return (
     <div className="space-y-8">
-      {showPerformance && <TeamPerformance data={data} anchor={data.anchor || INITIAL_DATA.anchor} setAnchor={setAnchor} range={range} setRange={setRange} />}
-      {showPersonnel && <Personnel data={data} />}
+      {showPerformance && <TeamPerformance data={data || INITIAL_DATA} anchor={data?.anchor || INITIAL_DATA.anchor} setAnchor={setAnchor} range={range} setRange={setRange} />}
+      {showPersonnel && <Personnel data={data || INITIAL_DATA} />}
     </div>
   );
 }
