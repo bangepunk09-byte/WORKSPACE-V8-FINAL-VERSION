@@ -340,13 +340,77 @@ export function PeopleAccess() {
         <ul className="mt-3 space-y-1">{invites.map((i) => <li key={i.id} className="flex items-center gap-2 text-sm"><span className="flex-1">{i.email}</span><span className="text-xs text-sub">{ROLE_NAMES[i.role]} · {i.used ? "joined" : "pending"}</span><button onClick={() => run(() => api.delete(`/admin/invitations/${i.id}`)).then(load)} className="text-sub" aria-label="Delete invitation"><Trash2 size={14} /></button></li>)}</ul>
       </Card>
 
-      <Card title={`Employees & roles (${users.filter((u) => !u.is_bot).length})`} testid="users-admin">
-        <div className="divide-y">{users.filter((u) => !u.is_bot).map((u) => (
-          <div key={u.user_id} className="flex flex-wrap items-center gap-2 py-2.5" data-testid={`admin-user-${u.user_id}`}>
-            <Avatar user={u} size={32} showStatus={false} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{u.name}</span><span className="block truncate text-xs text-sub">{u.email} · Divisi: {u.department || "General"}</span></span>
-            <select value={u.role} onChange={(e) => upd(u.user_id, { role: e.target.value })} className="h-9 rounded-lg border bg-surface2 px-2 text-xs" data-testid={`role-select-${u.user_id}`}>{Object.entries(ROLE_NAMES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-            <select value={u.status} onChange={(e) => upd(u.user_id, { status: e.target.value })} disabled={u.user_id === me.user_id} className={`h-9 rounded-lg border px-2 text-xs ${u.status === "pending" ? "bg-soft-yellow" : u.status === "inactive" ? "bg-soft-red" : "bg-surface2"}`} data-testid={`status-select-${u.user_id}`}><option value="active">Active</option><option value="pending">Pending</option><option value="inactive">Deactivated</option></select>
-          </div>))}</div>
+      <Card title={`Employees, Divisi & Roles (${users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant").length})`} testid="users-admin">
+        <div className="divide-y">
+          {users
+            .filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant")
+            .map((u) => {
+              const allDivs = Array.from(
+                new Set([
+                  ...(ws?.divisions || []),
+                  "Management",
+                  "Engineering",
+                  "Product",
+                  "Design",
+                  "Marketing",
+                  "Sales",
+                  "IT",
+                  "Finance",
+                  "Legal",
+                  "HRGA",
+                  "Operations",
+                  u.department
+                ].filter(Boolean))
+              );
+              return (
+                <div key={u.user_id} className="flex flex-wrap items-center gap-2 py-3" data-testid={`admin-user-${u.user_id}`}>
+                  <Avatar user={u} size={34} showStatus={false} />
+                  <span className="min-w-[160px] flex-1">
+                    <span className="block truncate text-sm font-bold text-ink">{u.name}</span>
+                    <span className="block truncate text-xs text-sub">{u.email} · {u.job_title || "—"}</span>
+                  </span>
+                  <select
+                    value={u.department || "Management"}
+                    onChange={(e) => upd(u.user_id, { department: e.target.value })}
+                    className="h-9 rounded-lg border bg-surface2 px-2.5 text-xs font-medium"
+                    title="Divisi"
+                    data-testid={`dept-select-${u.user_id}`}
+                  >
+                    {allDivs.map((d) => (
+                      <option key={d} value={d}>Divisi: {d}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={u.role}
+                    onChange={(e) => upd(u.user_id, { role: e.target.value })}
+                    className="h-9 rounded-lg border bg-surface2 px-2.5 text-xs font-medium"
+                    data-testid={`role-select-${u.user_id}`}
+                  >
+                    {Object.entries(ROLE_NAMES).map(([k, l]) => (
+                      <option key={k} value={k}>{l}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={u.status}
+                    onChange={(e) => upd(u.user_id, { status: e.target.value })}
+                    disabled={u.user_id === me.user_id}
+                    className={`h-9 rounded-lg border px-2.5 text-xs font-medium ${
+                      u.status === "pending"
+                        ? "bg-soft-yellow"
+                        : u.status === "inactive"
+                        ? "bg-soft-red"
+                        : "bg-surface2"
+                    }`}
+                    data-testid={`status-select-${u.user_id}`}
+                  >
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="inactive">Deactivated</option>
+                  </select>
+                </div>
+              );
+            })}
+        </div>
       </Card>
     </div>
   );
@@ -467,24 +531,150 @@ export function WorkspaceBranding() {
 }
 
 export function DivisionsAdmin() {
-  const { reloadWs } = useApp();
-  const [list, setList] = useState(DIVISIONS_CACHE || []);
+  const { ws, reloadWs } = useApp();
+  const [list, setList] = useState(() => DIVISIONS_CACHE || ws?.divisions || []);
   const [n, setN] = useState("");
-  useEffect(() => { 
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
     api.get("/workspace").then((r) => {
       const divs = r.data.divisions || [];
       DIVISIONS_CACHE = divs;
       setList(divs);
       localStorage.setItem("circle_admin_divisions", JSON.stringify(divs));
-    }); 
+    }).catch(() => {});
   }, []);
-  const save = (l) => run(() => api.patch("/workspace", { divisions: l }), "Divisi disimpan").then((ok) => { if (ok) { setList(l); reloadWs(); localStorage.setItem("circle_admin_divisions", JSON.stringify(l)); } });
-  const add = () => { if (n.trim() && !list.includes(n.trim())) { save([...list, n.trim()]); setN(""); } };
-  if (!list && !DIVISIONS_CACHE) return null;
+
+  useEffect(() => {
+    if (Array.isArray(ws?.divisions) && ws.divisions.length > 0) {
+      setList(ws.divisions);
+    }
+  }, [ws?.divisions]);
+
+  const save = async (nextList, msg = "Daftar divisi & struktur organisasi berhasil disimpan!") => {
+    const cleaned = nextList.map((d) => String(d || "").trim()).filter(Boolean);
+    setSaving(true);
+    try {
+      await api.patch("/workspace", { divisions: cleaned });
+      await api.post("/org/sync-divisions").catch(() => {});
+      DIVISIONS_CACHE = cleaned;
+      setList(cleaned);
+      localStorage.setItem("circle_admin_divisions", JSON.stringify(cleaned));
+      await reloadWs();
+      toast.success(msg);
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const add = () => {
+    const clean = n.trim();
+    if (!clean) return;
+    if (list.some((x) => x.toLowerCase() === clean.toLowerCase())) {
+      return toast.error("Divisi tersebut sudah ada");
+    }
+    const next = [...list, clean];
+    save(next, `Divisi "${clean}" ditambahkan & diselaraskan ke Struktur Organisasi!`);
+    setN("");
+  };
+
+  const move = (idx, dir) => {
+    const target = idx + dir;
+    if (target < 0 || target >= list.length) return;
+    const next = [...list];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setList(next);
+  };
+
+  const renameItem = (idx, val) => {
+    const next = [...list];
+    next[idx] = val;
+    setList(next);
+  };
+
   return (
-    <Card title="Daftar divisi (form profil karyawan baru)" testid="divisions-admin">
-      <div className="flex gap-2"><input value={n} onChange={(e) => setN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Nama divisi" className={`${inp} flex-1`} data-testid="division-name-input" /><button onClick={add} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="division-add-btn"><Plus size={14} /></button></div>
-      <div className="mt-3 flex flex-wrap gap-2">{list.map((d) => <span key={d} className="flex items-center gap-1.5 rounded-full bg-surface2 px-3 py-1.5 text-sm" data-testid={`division-item-${d.replace(/\s/g, "-")}`}>{d}<button onClick={() => save(list.filter((x) => x !== d))} className="text-sub hover:text-rose-500" aria-label={`Hapus ${d}`} data-testid={`division-remove-${d.replace(/\s/g, "-")}`}><Trash2 size={12} /></button></span>)}{!list.length && <span className="text-sm text-sub">Belum ada divisi.</span>}</div>
+    <Card title="Daftar Divisi & Penyelarasan Struktur Organisasi" testid="divisions-admin">
+      <p className="mb-3 text-xs text-sub">
+        Kelola daftar divisi resmi perusahaan. Setiap penambahan, perubahan nama, atau urutan divisi di sini otomatis tersimpan dan tersinkronisasi dengan halaman <b>Organization Structure</b>, <b>Employee</b>, dan <b>Directory</b>.
+      </p>
+      <div className="flex gap-2">
+        <input
+          value={n}
+          onChange={(e) => setN(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          placeholder="Tambah nama divisi baru..."
+          className={`${inp} flex-1`}
+          data-testid="division-name-input"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={saving}
+          className="btn-accent h-10 px-4 text-sm font-semibold flex items-center gap-1.5"
+          data-testid="division-add-btn"
+        >
+          <Plus size={14} /> Tambah
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-2 max-h-80 overflow-y-auto pr-1">
+        {list.map((d, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2 rounded-xl border bg-surface2/60 px-3 py-1.5"
+            data-testid={`division-item-${String(d).replace(/\s/g, "-")}`}
+          >
+            <span className="text-xs font-bold text-sub w-5">{i + 1}.</span>
+            <input
+              value={d}
+              onChange={(e) => renameItem(i, e.target.value)}
+              className="h-8 flex-1 rounded-lg border bg-surface px-2.5 text-xs font-semibold text-ink outline-none focus:border-brand"
+            />
+            <button
+              type="button"
+              disabled={i === 0}
+              onClick={() => move(i, -1)}
+              className="text-sub hover:text-ink disabled:opacity-30 p-1"
+              title="Geser ke atas"
+            >
+              <ArrowUp size={14} />
+            </button>
+            <button
+              type="button"
+              disabled={i === list.length - 1}
+              onClick={() => move(i, 1)}
+              className="text-sub hover:text-ink disabled:opacity-30 p-1"
+              title="Geser ke bawah"
+            >
+              <ArrowDown size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => save(list.filter((_, idx) => idx !== i), `Divisi "${d}" dihapus`)}
+              className="text-sub hover:text-rose-500 p-1"
+              aria-label={`Hapus ${d}`}
+              data-testid={`division-remove-${String(d).replace(/\s/g, "-")}`}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        {!list.length && <p className="text-sm text-sub py-2">Belum ada divisi.</p>}
+      </div>
+
+      <div className="mt-4 flex justify-end border-t pt-3">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => save(list)}
+          className="btn-accent h-10 px-5 text-sm font-semibold disabled:opacity-50"
+          data-testid="divisions-save-btn"
+        >
+          {saving ? "Menyimpan..." : "Simpan & Selaraskan Divisi"}
+        </button>
+      </div>
     </Card>
   );
 }

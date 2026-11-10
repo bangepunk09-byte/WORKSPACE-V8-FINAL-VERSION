@@ -47,10 +47,14 @@ export function UserProfileSettings() {
 
       const targetId = me?.user_id || "me";
       const { data } = await api.patch(`/users/${targetId}`, { avatar: url, picture: url });
-      setSession((s) => ({
-        ...s,
-        user: { ...s?.user, ...data, avatar: url, picture: url }
-      }));
+      setSession((s) => {
+        const next = {
+          ...s,
+          user: { ...s?.user, ...data, avatar: url, picture: url }
+        };
+        try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+        return next;
+      });
       reloadUsers();
       toast.success("Foto profil berhasil diperbarui!");
     } catch (err) {
@@ -75,12 +79,16 @@ export function UserProfileSettings() {
       };
       const targetId = me?.user_id || "me";
       const { data } = await api.patch(`/users/${targetId}`, payload);
-      setSession((s) => ({
-        ...s,
-        user: { ...s?.user, ...data, avatar: data.avatar || data.picture, picture: data.avatar || data.picture }
-      }));
+      setSession((s) => {
+        const next = {
+          ...s,
+          user: { ...s?.user, ...data, avatar: data.avatar || data.picture, picture: data.avatar || data.picture }
+        };
+        try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+        return next;
+      });
       reloadUsers();
-      toast.success("Data diri lengkap berhasil disimpan!");
+      toast.success("Data diri lengkap & divisi organisasi berhasil disimpan!");
     } catch (err) {
       toast.error(errMsg(err, "Gagal menyimpan data diri"));
     } finally {

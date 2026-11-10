@@ -11,12 +11,12 @@ const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
 
 const DEFAULT_USERS = [
-  { user_id: "user_admin1", name: "Admin ASLI RI", email: "admin@asliri.local", role: "super_admin", job_title: "Super Admin", department: "Management", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" },
-  { user_id: "user_superadmin_saeful", name: "Saeful", email: "saeful@asliri.id", role: "super_admin", job_title: "Super Administrator", department: "Management", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" }
+  { user_id: "user_admin1", name: "Admin ASLI RI", email: "admin@asliri.local", role: "super_admin", job_title: "Super Admin", department: "Management", org_unit_id: "unit_mgmt", manager_id: "user_superadmin_saeful", status: "active", online: true, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" },
+  { user_id: "user_superadmin_saeful", name: "Saeful", email: "saeful@asliri.id", role: "super_admin", job_title: "Super Administrator", department: "Management", org_unit_id: "unit_mgmt", manager_id: null, status: "active", online: true, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" }
 ];
 
 try {
-  if (typeof window !== "undefined" && localStorage.getItem("circle_prod_clean_v2") !== "1") {
+  if (typeof window !== "undefined" && localStorage.getItem("circle_prod_clean_v3") !== "1") {
     const keysToClear = [
       "circle_tasks_cache",
       "circle_cache_tasks",
@@ -31,12 +31,14 @@ try {
       "circle_stats_team_cache_7d",
       "circle_stats_team_cache_4w",
       "circle_org_units_cache",
+      "circle_admin_divisions",
+      "circle_admin_users",
       "circle_boards_cache",
       "circle_notifications_cache",
       "circle_session_cache"
     ];
     keysToClear.forEach((k) => localStorage.removeItem(k));
-    localStorage.setItem("circle_prod_clean_v2", "1");
+    localStorage.setItem("circle_prod_clean_v3", "1");
   }
 } catch {}
 
@@ -47,7 +49,9 @@ const DEFAULT_SESSION = {
     subtitle: "CIRCLE Workspace",
     assistant_name: "Circle",
     assistant_avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364",
-    task_statuses: ["todo", "in_progress", "in_review", "done"]
+    task_statuses: ["todo", "in_progress", "in_review", "done"],
+    divisions: ["Management", "Engineering", "Product", "Design", "Marketing", "Sales", "IT", "Finance", "Legal", "HRGA", "Operations"],
+    org_levels: ["Executive", "Division", "Department", "Team"]
   },
   prefs: { theme_mode: "light" }
 };
@@ -154,6 +158,9 @@ export function AppProvider({ children }) {
         setLabels(data.labels);
         try { localStorage.setItem("circle_labels_cache", JSON.stringify(data.labels)); } catch {}
       }
+      if (Array.isArray(data.org_units)) {
+        try { localStorage.setItem("circle_org_units_cache", JSON.stringify(data.org_units)); } catch {}
+      }
       if (Array.isArray(data.drive_shortcuts)) {
         setCachedDriveShortcuts(data.drive_shortcuts);
       }
@@ -251,13 +258,25 @@ export function AppProvider({ children }) {
           }).catch(() => {});
         }
         if (evt.type === "workspace:changed") {
-          api.get("/workspace").then((r) => setSession((s) => (s ? { ...s, workspace: r.data } : s))).catch(() => {});
+          api.get("/workspace").then((r) => {
+            setSession((s) => {
+              if (!s) return s;
+              const next = { ...s, workspace: r.data };
+              try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+              return next;
+            });
+          }).catch(() => {});
         }
         if (evt.type === "users:changed") {
           api.get("/users").then((r) => {
-            setUsers(r.data);
-            try { localStorage.setItem("circle_users_cache", JSON.stringify(r.data)); } catch {}
+            if (Array.isArray(r.data)) {
+              setUsers(r.data);
+              try { localStorage.setItem("circle_users_cache", JSON.stringify(r.data)); } catch {}
+            }
           }).catch(() => {});
+        }
+        if (evt.type === "org:changed" && Array.isArray(evt.units)) {
+          try { localStorage.setItem("circle_org_units_cache", JSON.stringify(evt.units)); } catch {}
         }
         if (evt.type === "drive_shortcuts:changed" && Array.isArray(evt.data)) {
           setCachedDriveShortcuts(evt.data);
@@ -291,25 +310,58 @@ export function AppProvider({ children }) {
       lang: "en",
       t: (key) => getTranslation(key, prefs?.custom_copywriting),
       themeDraft, setThemeDraft,
-      reloadUsers: () => api.get("/users").then((r) => setUsers(r.data)),
-      reloadLabels: () => api.get("/labels").then((r) => setLabels(r.data)),
-      reloadWs: () => api.get("/workspace").then((r) => setSession((s) => ({ ...s, workspace: r.data }))),
+      reloadUsers: () => api.get("/users").then((r) => {
+        if (Array.isArray(r.data)) {
+          setUsers(r.data);
+          try { localStorage.setItem("circle_users_cache", JSON.stringify(r.data)); } catch {}
+          setSession((s) => {
+            if (!s?.user) return s;
+            const updatedMe = r.data.find((u) => u.user_id === s.user.user_id);
+            if (!updatedMe) return s;
+            const next = { ...s, user: updatedMe };
+            try { localStorage.setItem("circle_session_cache", JSON.stringify(next)); } catch {}
+            return next;
+          });
+        }
+      }),
+      reloadLabels: () => api.get("/labels").then((r) => {
+        if (Array.isArray(r.data)) {
+          setLabels(r.data);
+          try { localStorage.setItem("circle_labels_cache", JSON.stringify(r.data)); } catch {}
+        }
+      }),
+      reloadWs: () => api.get("/workspace").then((r) => {
+        setSession((s) => {
+          const next = { ...s, workspace: r.data };
+          try {
+            localStorage.setItem("circle_session_cache", JSON.stringify(next));
+            if (Array.isArray(r.data?.divisions)) {
+              localStorage.setItem("circle_admin_divisions", JSON.stringify(r.data.divisions));
+            }
+          } catch {}
+          return next;
+        });
+      }),
       savePrefs: async (patch) => {
         setSession((s) => {
           const nextPrefs = { ...(s?.prefs || {}), ...patch };
+          const nextSession = { ...s, prefs: nextPrefs };
           try {
             localStorage.setItem("circle_user_prefs", JSON.stringify(nextPrefs));
+            localStorage.setItem("circle_session_cache", JSON.stringify(nextSession));
           } catch {}
-          return { ...s, prefs: nextPrefs };
+          return nextSession;
         });
         try {
           const { data } = await api.put("/prefs", patch);
           setSession((s) => {
             const synced = { ...(s?.prefs || {}), ...data };
+            const nextSession = { ...s, prefs: synced };
             try {
               localStorage.setItem("circle_user_prefs", JSON.stringify(synced));
+              localStorage.setItem("circle_session_cache", JSON.stringify(nextSession));
             } catch {}
-            return { ...s, prefs: synced };
+            return nextSession;
           });
         } catch (e) {
           console.warn("Server prefs sync warning:", e);

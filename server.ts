@@ -579,24 +579,119 @@ async function startServer() {
     ];
   }
 
-  // Ensure default org units and member mappings exist if empty
-  if (!Array.isArray(db.org_units) || db.org_units.length === 0) {
-    db.org_units = [
-      { id: "unit_exec", name: "Board of Directors & Management", level: "Executive", head_id: "user_superadmin_saeful", parent_id: null },
-      { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
-      { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_superadmin_saeful", parent_id: "unit_exec" },
-      { id: "unit_ops", name: "Operations & Infrastructure", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
-      { id: "unit_mkt", name: "Marketing & Growth", level: "Department", head_id: null, parent_id: "unit_exec" }
-    ];
+  const DEFAULT_ALIGNED_DIVISIONS = [
+    "Management",
+    "Engineering",
+    "Product",
+    "Design",
+    "Marketing",
+    "Sales",
+    "IT",
+    "Finance",
+    "Legal",
+    "HRGA",
+    "Operations"
+  ];
 
-    const mapping: Record<string, { unit: string, manager?: string }> = {
-      "user_superadmin_saeful": { unit: "unit_exec" },
-      "user_admin1": { unit: "unit_ops", manager: "user_superadmin_saeful" }
-    };
+  const DEFAULT_ALIGNED_ORG_UNITS = [
+    { id: "unit_mgmt", name: "Management", division: "Management", description: "Board of Directors & Executive Leadership", level: "Executive", color: "#FF5364", head_id: "user_superadmin_saeful", parent_id: null, order: 0 },
+    { id: "unit_eng", name: "Engineering", division: "Engineering", description: "Software Engineering, Architecture & DevOps", level: "Division", color: "#3B82F6", head_id: "user_admin1", parent_id: "unit_mgmt", order: 1 },
+    { id: "unit_prod", name: "Product", division: "Product", description: "Product Management, Strategy & Research", level: "Division", color: "#8B5CF6", head_id: "user_superadmin_saeful", parent_id: "unit_mgmt", order: 2 },
+    { id: "unit_design", name: "Design", division: "Design", description: "UI/UX Design, Brand & Creative Assets", level: "Division", color: "#EC4899", head_id: null, parent_id: "unit_mgmt", order: 3 },
+    { id: "unit_mkt", name: "Marketing", division: "Marketing", description: "Brand Marketing, Campaign & Social Media Growth", level: "Division", color: "#10B981", head_id: null, parent_id: "unit_mgmt", order: 4 },
+    { id: "unit_sales", name: "Sales", division: "Sales", description: "Enterprise Sales, Partnership & Business Development", level: "Division", color: "#F59E0B", head_id: null, parent_id: "unit_mgmt", order: 5 },
+    { id: "unit_it", name: "IT", division: "IT", description: "IT Infrastructure, Security & Internal Support", level: "Division", color: "#06B6D4", head_id: "user_admin1", parent_id: "unit_mgmt", order: 6 },
+    { id: "unit_fin", name: "Finance", division: "Finance", description: "Financial Planning, Accounting & Treasury", level: "Division", color: "#14B8A6", head_id: null, parent_id: "unit_mgmt", order: 7 },
+    { id: "unit_legal", name: "Legal", division: "Legal", description: "Corporate Legal, Compliance & Contracts", level: "Division", color: "#6366F1", head_id: null, parent_id: "unit_mgmt", order: 8 },
+    { id: "unit_hrga", name: "HRGA", division: "HRGA", description: "Human Resources, Talent & General Affairs", level: "Division", color: "#F97316", head_id: null, parent_id: "unit_mgmt", order: 9 },
+    { id: "unit_ops", name: "Operations", division: "Operations", description: "Business Operations & Quality Assurance", level: "Division", color: "#64748B", head_id: "user_admin1", parent_id: "unit_mgmt", order: 10 }
+  ];
+
+  if (!Array.isArray(db.workspace.org_levels) || db.workspace.org_levels.length === 0) {
+    db.workspace.org_levels = ["Executive", "Division", "Department", "Team"];
+  }
+
+  // Align workspace divisions and org_units with the current official divisions
+  if (!db.org_aligned_v2 || !Array.isArray(db.org_units) || db.org_units.length === 0) {
+    db.workspace.divisions = [...DEFAULT_ALIGNED_DIVISIONS];
+    db.org_units = JSON.parse(JSON.stringify(DEFAULT_ALIGNED_ORG_UNITS));
+
     (db.users || []).forEach((u: any) => {
-      if (mapping[u.user_id]) {
-        u.org_unit_id = mapping[u.user_id].unit;
-        if (mapping[u.user_id].manager) u.manager_id = mapping[u.user_id].manager;
+      if (u.is_bot || u.role === "assistant" || u.user_id === CIRCLE_BOT_ID) {
+        u.org_unit_id = null;
+        return;
+      }
+      if (u.user_id === "user_superadmin_saeful") {
+        u.department = "Management";
+        u.org_unit_id = "unit_mgmt";
+        u.manager_id = null;
+      } else if (u.user_id === "user_admin1") {
+        u.department = "Management";
+        u.org_unit_id = "unit_mgmt";
+        u.manager_id = "user_superadmin_saeful";
+      } else {
+        const dept = u.department || "Management";
+        const matchedUnit = db.org_units.find(
+          (unit: any) => (unit.division || unit.name || "").toLowerCase() === dept.toLowerCase()
+        );
+        u.org_unit_id = matchedUnit ? matchedUnit.id : "unit_mgmt";
+      }
+    });
+
+    db.org_aligned_v2 = true;
+    saveDbToFile();
+  }
+
+  // Helper to sync user department <-> org_unit_id
+  function syncUserOrgAndDepartment(user: any, body: any = {}) {
+    if (!user || user.is_bot || user.role === "assistant" || user.user_id === CIRCLE_BOT_ID) return;
+    if ("org_unit_id" in body) {
+      if (body.org_unit_id) {
+        const unit = (db.org_units || []).find((u: any) => u.id === body.org_unit_id);
+        if (unit && !("department" in body)) {
+          user.department = unit.division || unit.name;
+        }
+      }
+    } else if ("department" in body && body.department) {
+      const matched = (db.org_units || []).find(
+        (u: any) =>
+          (u.division || "").toLowerCase() === String(body.department).toLowerCase() ||
+          (u.name || "").toLowerCase() === String(body.department).toLowerCase()
+      );
+      if (matched) {
+        user.org_unit_id = matched.id;
+      }
+    }
+  }
+
+  // Helper to sync db.workspace.divisions <-> db.org_units
+  function syncDivisionsToOrgUnits(divisionsList: string[]) {
+    if (!Array.isArray(divisionsList)) return;
+    db.org_units = Array.isArray(db.org_units) ? db.org_units : [];
+    const rootUnit = db.org_units.find((u: any) => !u.parent_id) || db.org_units[0] || null;
+    const palette = ["#FF5364", "#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#06B6D4", "#14B8A6", "#6366F1", "#F97316", "#64748B"];
+
+    divisionsList.forEach((divName, idx) => {
+      const clean = String(divName || "").trim();
+      if (!clean) return;
+      const existing = db.org_units.find(
+        (u: any) =>
+          (u.division || "").toLowerCase() === clean.toLowerCase() ||
+          (u.name || "").toLowerCase() === clean.toLowerCase()
+      );
+      if (!existing) {
+        const slug = clean.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        db.org_units.push({
+          id: `unit_${slug}_${Date.now().toString(36).slice(-3)}`,
+          name: clean,
+          division: clean,
+          description: `Divisi ${clean}`,
+          level: rootUnit ? "Division" : "Executive",
+          color: palette[idx % palette.length],
+          head_id: null,
+          parent_id: rootUnit ? rootUnit.id : null,
+          order: db.org_units.length
+        });
       }
     });
   }
@@ -649,6 +744,7 @@ async function startServer() {
       prefs: db.prefs[latestUser.user_id] || { theme_mode: "light" },
       users: db.users,
       labels: db.labels,
+      org_units: db.org_units || [],
       drive_shortcuts: db.drive_shortcuts || []
     });
   });
@@ -1143,11 +1239,13 @@ async function startServer() {
     if (req.body.avatar && !req.body.picture) req.body.picture = req.body.avatar;
     if (req.body.picture && !req.body.avatar) req.body.avatar = req.body.picture;
     Object.assign(user, req.body);
+    syncUserOrgAndDepartment(user, req.body);
     if (currentSessionUser?.user_id === user.user_id) {
-      currentSessionUser = { ...currentSessionUser, ...req.body };
+      currentSessionUser = { ...currentSessionUser, ...user };
     }
     saveDbToFile();
     broadcast({ type: "users:changed", user });
+    broadcast({ type: "org:changed", units: db.org_units });
     res.json(user);
   });
 
@@ -1155,11 +1253,13 @@ async function startServer() {
     const user = db.users.find((u: any) => u.user_id === req.params.id);
     if (!user) return res.status(404).json({ detail: "User not found" });
     Object.assign(user, req.body);
+    syncUserOrgAndDepartment(user, req.body);
     if (currentSessionUser?.user_id === user.user_id) {
-      currentSessionUser = { ...currentSessionUser, ...req.body };
+      currentSessionUser = { ...currentSessionUser, ...user };
     }
     saveDbToFile();
     broadcast({ type: "users:changed", user });
+    broadcast({ type: "org:changed", units: db.org_units });
     res.json(user);
   });
 
@@ -2395,34 +2495,279 @@ async function startServer() {
 
   // Org Endpoints
   app.get("/api/org/units", (req, res) => {
-    res.json(db.org_units);
+    const sorted = [...(db.org_units || [])].sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
+    res.json(sorted);
   });
 
   app.post("/api/org/units", (req, res) => {
-    const u = { id: `unit_${Date.now()}`, ...req.body };
+    db.org_units = Array.isArray(db.org_units) ? db.org_units : [];
+    const { member_ids, sync_division = true, ...rest } = req.body || {};
+    const name = String(rest.name || "").trim();
+    if (!name) return res.status(400).json({ detail: "Nama unit wajib diisi" });
+    const divisionName = String(rest.division || name).trim();
+    const u = {
+      id: rest.id || `unit_${Date.now()}`,
+      name,
+      division: divisionName,
+      description: rest.description || "",
+      level: rest.level || "Division",
+      color: rest.color || "#FF5364",
+      head_id: rest.head_id || null,
+      parent_id: rest.parent_id || null,
+      order: typeof rest.order === "number" ? rest.order : db.org_units.length
+    };
     db.org_units.push(u);
+
+    if (sync_division && divisionName) {
+      db.workspace.divisions = Array.isArray(db.workspace.divisions) ? db.workspace.divisions : [];
+      if (!db.workspace.divisions.some((d: string) => d.toLowerCase() === divisionName.toLowerCase())) {
+        db.workspace.divisions.push(divisionName);
+      }
+    }
+
+    if (Array.isArray(member_ids)) {
+      (db.users || []).forEach((usr: any) => {
+        if (usr.is_bot || usr.role === "assistant" || usr.user_id === CIRCLE_BOT_ID) return;
+        if (member_ids.includes(usr.user_id)) {
+          usr.org_unit_id = u.id;
+          usr.department = u.division || u.name;
+        }
+      });
+    }
+
+    saveDbToFile();
+    broadcast({ type: "org:changed", units: db.org_units });
+    broadcast({ type: "workspace:changed" });
+    broadcast({ type: "users:changed" });
     res.json(u);
   });
 
   app.patch("/api/org/units/:id", (req, res) => {
-    const u = db.org_units.find((x: any) => x.id === req.params.id);
-    if (u) Object.assign(u, req.body);
-    res.json(u || { success: true });
+    const u = (db.org_units || []).find((x: any) => x.id === req.params.id);
+    if (!u) return res.status(404).json({ detail: "Unit tidak ditemukan" });
+    const oldDivision = u.division || u.name;
+    const { member_ids, sync_division = true, ...patch } = req.body || {};
+
+    if (patch.name && !patch.division && (!u.division || u.division === u.name)) {
+      patch.division = patch.name;
+    }
+    Object.assign(u, patch);
+    const newDivision = u.division || u.name;
+
+    if (sync_division && newDivision && Array.isArray(db.workspace.divisions)) {
+      const idx = db.workspace.divisions.findIndex((d: string) => d.toLowerCase() === String(oldDivision).toLowerCase());
+      if (idx !== -1) {
+        db.workspace.divisions[idx] = newDivision;
+      } else if (!db.workspace.divisions.some((d: string) => d.toLowerCase() === String(newDivision).toLowerCase())) {
+        db.workspace.divisions.push(newDivision);
+      }
+    }
+
+    // Update department for members assigned to this unit
+    (db.users || []).forEach((usr: any) => {
+      if (usr.is_bot || usr.role === "assistant" || usr.user_id === CIRCLE_BOT_ID) return;
+      if (Array.isArray(member_ids)) {
+        if (member_ids.includes(usr.user_id)) {
+          usr.org_unit_id = u.id;
+          usr.department = newDivision;
+        } else if (usr.org_unit_id === u.id) {
+          usr.org_unit_id = null;
+        }
+      } else if (usr.org_unit_id === u.id && newDivision) {
+        usr.department = newDivision;
+      }
+    });
+
+    saveDbToFile();
+    broadcast({ type: "org:changed", units: db.org_units });
+    broadcast({ type: "workspace:changed" });
+    broadcast({ type: "users:changed" });
+    res.json(u);
+  });
+
+  app.post("/api/org/units/reorder", (req, res) => {
+    const { unit_id, direction, ordered_ids } = req.body || {};
+    db.org_units = Array.isArray(db.org_units) ? db.org_units : [];
+
+    if (Array.isArray(ordered_ids)) {
+      ordered_ids.forEach((id: string, idx: number) => {
+        const found = db.org_units.find((u: any) => u.id === id);
+        if (found) found.order = idx;
+      });
+    } else if (unit_id && direction) {
+      const target = db.org_units.find((u: any) => u.id === unit_id);
+      if (target) {
+        const siblings = db.org_units
+          .filter((u: any) => (u.parent_id || null) === (target.parent_id || null))
+          .sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
+        siblings.forEach((s: any, i: number) => { s.order = i; });
+        const idx = siblings.findIndex((s: any) => s.id === unit_id);
+        const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (idx !== -1 && swapIdx >= 0 && swapIdx < siblings.length) {
+          const tempOrder = siblings[idx].order;
+          siblings[idx].order = siblings[swapIdx].order;
+          siblings[swapIdx].order = tempOrder;
+        }
+      }
+    }
+
+    db.org_units.sort((a: any, b: any) => (a.order ?? 999) - (b.order ?? 999));
+    saveDbToFile();
+    broadcast({ type: "org:changed", units: db.org_units });
+    res.json(db.org_units);
+  });
+
+  app.post("/api/org/sync-divisions", (req, res) => {
+    syncDivisionsToOrgUnits(db.workspace.divisions || DEFAULT_ALIGNED_DIVISIONS);
+    // Ensure all divisions from org_units are also in workspace.divisions
+    const unitDivs = (db.org_units || [])
+      .map((u: any) => String(u.division || u.name || "").trim())
+      .filter(Boolean);
+    db.workspace.divisions = Array.from(new Set([...(db.workspace.divisions || []), ...unitDivs]));
+
+    // Sync users whose department matches an org_unit
+    (db.users || []).forEach((usr: any) => {
+      if (usr.is_bot || usr.role === "assistant" || usr.user_id === CIRCLE_BOT_ID) return;
+      if (!usr.org_unit_id && usr.department) {
+        const matched = db.org_units.find(
+          (u: any) =>
+            (u.division || "").toLowerCase() === usr.department.toLowerCase() ||
+            (u.name || "").toLowerCase() === usr.department.toLowerCase()
+        );
+        if (matched) usr.org_unit_id = matched.id;
+      } else if (usr.org_unit_id) {
+        const matched = db.org_units.find((u: any) => u.id === usr.org_unit_id);
+        if (matched) usr.department = matched.division || matched.name;
+      }
+    });
+
+    saveDbToFile();
+    broadcast({ type: "org:changed", units: db.org_units });
+    broadcast({ type: "workspace:changed" });
+    broadcast({ type: "users:changed" });
+    res.json({ units: db.org_units, divisions: db.workspace.divisions });
   });
 
   app.delete("/api/org/units/:id", (req, res) => {
-    db.org_units = db.org_units.filter((u: any) => u.id !== req.params.id);
-    res.json({ success: true });
+    const targetId = req.params.id;
+    const reassignTo = req.query.reassign_to ? String(req.query.reassign_to) : null;
+    const deletedUnit = (db.org_units || []).find((u: any) => u.id === targetId);
+    const fallbackParent = reassignTo || deletedUnit?.parent_id || null;
+
+    db.org_units = (db.org_units || []).filter((u: any) => u.id !== targetId);
+
+    // Reassign child sub-units
+    db.org_units.forEach((u: any) => {
+      if (u.parent_id === targetId) {
+        u.parent_id = fallbackParent === u.id ? null : fallbackParent;
+      }
+    });
+
+    // Reassign members in deleted unit
+    const targetReassignUnit = reassignTo ? db.org_units.find((u: any) => u.id === reassignTo) : null;
+    (db.users || []).forEach((usr: any) => {
+      if (usr.org_unit_id === targetId) {
+        usr.org_unit_id = reassignTo || null;
+        if (targetReassignUnit) {
+          usr.department = targetReassignUnit.division || targetReassignUnit.name;
+        }
+      }
+    });
+
+    // Optionally remove division from workspace.divisions if no other unit uses it
+    if (deletedUnit && Array.isArray(db.workspace.divisions)) {
+      const divName = deletedUnit.division || deletedUnit.name;
+      const stillUsed = db.org_units.some(
+        (u: any) => (u.division || u.name || "").toLowerCase() === String(divName || "").toLowerCase()
+      );
+      if (!stillUsed && req.query.remove_division !== "false") {
+        db.workspace.divisions = db.workspace.divisions.filter(
+          (d: string) => d.toLowerCase() !== String(divName || "").toLowerCase()
+        );
+      }
+    }
+
+    saveDbToFile();
+    broadcast({ type: "org:changed", units: db.org_units });
+    broadcast({ type: "workspace:changed" });
+    broadcast({ type: "users:changed" });
+    res.json({ success: true, units: db.org_units });
   });
 
   app.patch("/api/org/members/:uid", (req, res) => {
     const m = db.users.find((u: any) => u.user_id === req.params.uid);
-    if (m) Object.assign(m, req.body);
-    res.json(m || { success: true });
+    if (!m) return res.status(404).json({ detail: "Anggota tidak ditemukan" });
+    Object.assign(m, req.body);
+    syncUserOrgAndDepartment(m, req.body);
+    if (currentSessionUser?.user_id === m.user_id) {
+      currentSessionUser = { ...currentSessionUser, ...m };
+    }
+    saveDbToFile();
+    broadcast({ type: "users:changed", user: m });
+    broadcast({ type: "org:changed", units: db.org_units });
+    res.json(m);
   });
 
-  app.post("/api/org/import", (req, res) => {
-    res.json({ created: 0, updated: 0 });
+  app.get("/api/org/export", (req, res) => {
+    const rows = [["Unit ID", "Unit Name", "Division", "Level", "Parent Unit ID", "Head Name", "Members Count"]];
+    (db.org_units || []).forEach((u: any) => {
+      const head = (db.users || []).find((x: any) => x.user_id === u.head_id);
+      const memCount = (db.users || []).filter((x: any) => !x.is_bot && x.org_unit_id === u.id).length;
+      rows.push([
+        u.id || "",
+        u.name || "",
+        u.division || u.name || "",
+        u.level || "Division",
+        u.parent_id || "",
+        head?.name || "",
+        String(memCount)
+      ]);
+    });
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="organization.csv"');
+    res.send(csv);
+  });
+
+  app.post("/api/org/import", upload.single("file"), (req: any, res) => {
+    try {
+      const raw = req.file ? req.file.buffer.toString("utf-8") : String(req.body?.csv || "");
+      const lines = raw.split(/\r?\n/).map((l: string) => l.trim()).filter(Boolean);
+      if (lines.length < 2) return res.json({ created: 0, updated: 0 });
+      let created = 0;
+      let updated = 0;
+      const rootUnit = (db.org_units || []).find((u: any) => !u.parent_id);
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map((c: string) => c.replace(/^"|"$/g, "").trim());
+        const name = cols[1] || cols[0];
+        const division = cols[2] || name;
+        const level = cols[3] || "Division";
+        if (!name) continue;
+        const existing = (db.org_units || []).find((u: any) => u.name.toLowerCase() === name.toLowerCase());
+        if (existing) {
+          existing.division = division;
+          existing.level = level;
+          updated++;
+        } else {
+          db.org_units.push({
+            id: `unit_${Date.now()}_${i}`,
+            name,
+            division,
+            level,
+            color: "#3B82F6",
+            head_id: null,
+            parent_id: rootUnit ? rootUnit.id : null,
+            order: db.org_units.length
+          });
+          created++;
+        }
+      }
+      saveDbToFile();
+      broadcast({ type: "org:changed", units: db.org_units });
+      res.json({ created, updated });
+    } catch (e: any) {
+      res.status(400).json({ detail: e?.message || "Gagal mengimpor CSV" });
+    }
   });
 
   // Post / Feed Endpoints
@@ -3661,9 +4006,39 @@ async function startServer() {
   });
 
   const handleWorkspaceUpdate = (req: any, res: any) => {
+    const oldDivisions = Array.isArray(db.workspace.divisions) ? [...db.workspace.divisions] : [];
     db.workspace = { ...db.workspace, ...req.body };
     if (req.body.name && !req.body.brand_name) db.workspace.brand_name = req.body.name;
     if (req.body.brand_name && !req.body.name) db.workspace.name = req.body.brand_name;
+
+    // If divisions were updated in Settings, sync them with Organization Units
+    if (Array.isArray(req.body.divisions)) {
+      const nextDivs = req.body.divisions.map((d: any) => String(d || "").trim()).filter(Boolean);
+      db.workspace.divisions = nextDivs;
+
+      // Handle renamed division if count is identical and 1 item changed
+      if (oldDivisions.length === nextDivs.length) {
+        oldDivisions.forEach((oldD, i) => {
+          const newD = nextDivs[i];
+          if (oldD && newD && oldD !== newD) {
+            (db.org_units || []).forEach((u: any) => {
+              if ((u.division || u.name || "").toLowerCase() === oldD.toLowerCase()) {
+                if (u.name === u.division || u.name === oldD) u.name = newD;
+                u.division = newD;
+              }
+            });
+            (db.users || []).forEach((usr: any) => {
+              if ((usr.department || "").toLowerCase() === oldD.toLowerCase()) {
+                usr.department = newD;
+              }
+            });
+          }
+        });
+      }
+
+      syncDivisionsToOrgUnits(nextDivs);
+    }
+
     const circleBot = db.users.find((u: any) => u.user_id === "user_circle_assistant");
     if (circleBot) {
       if (db.workspace.assistant_name) circleBot.name = db.workspace.assistant_name;
@@ -3675,6 +4050,7 @@ async function startServer() {
     }
     saveDbToFile();
     broadcast({ type: "workspace:changed" });
+    broadcast({ type: "org:changed", units: db.org_units });
     broadcast({ type: "users:changed" });
     res.json(db.workspace);
   };
