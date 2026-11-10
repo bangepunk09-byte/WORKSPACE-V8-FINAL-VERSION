@@ -121,24 +121,70 @@ function PostCard({ p, onChange, onDelete, reply }) {
   );
 }
 
-const INITIAL_TRENDING = [];
+const DEFAULT_TRENDING = [
+  { tag: "welcome", count: 3 },
+  { tag: "sprint", count: 2 },
+  { tag: "engineering", count: 1 },
+  { tag: "design", count: 1 }
+];
 
-const INITIAL_POSTS = [];
+const DEFAULT_POSTS = [
+  {
+    id: "pst_init_1",
+    author_id: "user_admin1",
+    text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
+    attachments: [],
+    likes: ["user_budi", "user_siti", "user_dian"],
+    like_count: 3,
+    liked: true,
+    reactions: { "🎉": ["user_budi", "user_siti"], "👍": ["user_admin1"] },
+    reply_count: 1,
+    replies_preview: [],
+    created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+  },
+  {
+    id: "pst_init_2",
+    author_id: "user_siti",
+    text: "Sprint Engineering minggu ini fokus pada integrasi sistem dan kestabilan performa. Rekan-rekan bisa cek board tugas masing-masing yaa 💻 #engineering #sprint #performance",
+    attachments: [],
+    likes: ["user_admin1", "user_dian"],
+    like_count: 2,
+    liked: false,
+    reactions: { "🔥": ["user_admin1", "user_dian"] },
+    reply_count: 0,
+    replies_preview: [],
+    created_at: new Date(Date.now() - 86400000 * 1).toISOString()
+  }
+];
+
+let TRENDING_CACHE = DEFAULT_TRENDING;
+try {
+  const saved = localStorage.getItem("circle_cache_trending");
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) TRENDING_CACHE = parsed;
+  }
+} catch {}
 
 function Trending({ compact }) {
   const { subscribe } = useApp();
-  const [items, setItems] = useState(INITIAL_TRENDING);
-  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState(TRENDING_CACHE);
+  const [loading, setLoading] = useState(!TRENDING_CACHE.length);
   const [params] = useSearchParams();
   const active = params.get("tag");
 
   const load = useCallback(() => {
     api.get("/posts/trending")
       .then((r) => {
-        if (Array.isArray(r.data)) setItems(r.data);
+        if (Array.isArray(r.data)) {
+          setItems(r.data);
+          localStorage.setItem("circle_cache_trending", JSON.stringify(r.data));
+        }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -174,7 +220,11 @@ function Trending({ compact }) {
       </h3>
       <p className="mb-3 text-xs text-sub">Hashtag paling ramai 7 hari terakhir</p>
 
-      {!displayItems.length ? (
+      {loading && !displayItems.length ? (
+        <div className="flex h-20 items-center justify-center">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-brand" />
+        </div>
+      ) : !displayItems.length ? (
         <p className="text-sm text-sub" data-testid="trending-empty">
           Belum ada hashtag. Coba tulis #namatopik di postinganmu.
         </p>
@@ -203,12 +253,21 @@ function Trending({ compact }) {
   );
 }
 
+let POSTS_CACHE = DEFAULT_POSTS;
+try {
+  const saved = localStorage.getItem("circle_cache_posts_feed");
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) POSTS_CACHE = parsed;
+  }
+} catch {}
+
 function Feed() {
   const { subscribe } = useApp();
   const [params, setParams] = useSearchParams();
   const tag = params.get("tag") || "";
-  const [posts, setPosts] = useState(INITIAL_POSTS);
-  const [loading, setLoading] = useState(false);
+  const [posts, setPosts] = useState(tag ? [] : POSTS_CACHE);
+  const [loading, setLoading] = useState(!posts.length);
   const [more, setMore] = useState(true);
 
   const load = useCallback(() => {
@@ -217,10 +276,13 @@ function Feed() {
         if (Array.isArray(r.data)) {
           setPosts(r.data);
           setMore(r.data.length === 30);
+          if (!tag) localStorage.setItem("circle_cache_posts_feed", JSON.stringify(r.data));
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+      });
   }, [tag]);
 
   useEffect(() => { load(); }, [load]);
@@ -254,7 +316,9 @@ function Feed() {
           </div>
         )}
         <Composer onPosted={(p) => setPosts((ps) => [p, ...(ps || []).filter((x) => x.id !== p.id)])} />
-        {!posts.length ? (
+        {loading && !posts.length ? (
+          <div className="flex py-20 items-center justify-center"><Spinner label="Postingan" /></div>
+        ) : !posts.length ? (
           <p className="py-10 text-center text-sm text-sub" data-testid="feed-empty">
             {tag ? `Belum ada postingan dengan #${tag}.` : "Belum ada postingan. Jadilah yang pertama!"}
           </p>

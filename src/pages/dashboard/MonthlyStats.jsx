@@ -197,8 +197,10 @@ export default function MonthlyStats({ showPerformance = true, showPersonnel = t
   const [anchor, setAnchor] = useState(null);
   const [range, setRange] = useState("7d");
   const [data, setData] = useState(getCachedStats);
+  const [loading, setLoading] = useState(!statsMemoryCache);
 
   const load = useCallback(() => {
+    if (!data || (data === INITIAL_DATA && !statsMemoryCache)) setLoading(true);
     api.get("/stats/team", { params: { range, ...(anchor ? { anchor } : {}) } })
       .then((r) => {
         if (r.data) {
@@ -209,12 +211,15 @@ export default function MonthlyStats({ showPerformance = true, showPersonnel = t
           } catch {}
         }
       })
-      .catch(() => {});
-  }, [anchor, range]);
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [anchor, range, data]);
 
   useEffect(() => { load(); }, [load]);
 
   if (!showPerformance && !showPersonnel) return null;
+  if (loading && (!data || data === INITIAL_DATA)) return <div className="flex h-48 items-center justify-center rounded-3xl border border-dashed bg-surface/50"><span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-brand" /></div>;
+
   return (
     <div className="space-y-8">
       {showPerformance && <TeamPerformance data={data} anchor={data.anchor || INITIAL_DATA.anchor} setAnchor={setAnchor} range={range} setRange={setRange} />}
@@ -222,3 +227,4 @@ export default function MonthlyStats({ showPerformance = true, showPersonnel = t
     </div>
   );
 }
+

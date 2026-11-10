@@ -10,9 +10,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { playSound } from "../lib/sound";
 import { listEvents, createEvent } from "../lib/calendar";
 
+let MEETINGS_CACHE = [];
+try {
+  const cached = localStorage.getItem("circle_meetings_cache");
+  if (cached) {
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed) && parsed.length > 0) MEETINGS_CACHE = parsed;
+  }
+} catch {}
+
 export default function Schedule() {
   const { me, users, userMap, t } = useApp();
-  const [meetings, setMeetings] = useState([]);
+  const [meetings, setMeetings] = useState(MEETINGS_CACHE);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [createOpen, setCreateOpen] = useState(false);
@@ -34,20 +43,19 @@ export default function Schedule() {
   });
 
   const loadMeetings = async () => {
-    try {
-      const [wsResult, gcalResult] = await Promise.allSettled([
-        api.get("/meetings"),
-        listEvents()
-      ]);
-
-      let workspaceMeetings = [];
-      if (wsResult.status === "fulfilled" && Array.isArray(wsResult.value?.data)) {
-        workspaceMeetings = wsResult.value.data;
+    // 1. Instant load local workspace meetings
+    api.get("/meetings").then((res) => {
+      if (Array.isArray(res.data)) {
+        setMeetings(res.data);
+        try { localStorage.setItem("circle_meetings_cache", JSON.stringify(res.data)); } catch {}
       }
+    }).catch(() => {});
 
-      let gcalMeetings = [];
-      if (gcalResult.status === "fulfilled" && gcalResult.value?.items && Array.isArray(gcalResult.value.items)) {
-        gcalMeetings = gcalResult.value.items.map((ev) => {
+    // 2. Background sync GCal events without blocking UI
+    try {
+      const gcalRes = await listEvents();
+      if (gcalRes?.items && Array.isArray(gcalRes.items)) {
+        const gcalMeetings = gcalRes.items.map((ev) => {
           const startDateStr = (ev.start?.dateTime || ev.start?.date || "").slice(0, 10);
           const startT = ev.start?.dateTime ? format(new Date(ev.start.dateTime), "HH:mm") : "09:00";
           const endT = ev.end?.dateTime ? format(new Date(ev.end.dateTime), "HH:mm") : "10:00";
@@ -65,22 +73,21 @@ export default function Schedule() {
             gcal_synced: true,
           };
         });
+
+        setMeetings((prev) => {
+          const combined = [...prev];
+          gcalMeetings.forEach((g) => {
+            const alreadyExists = combined.some(
+              (m) => m.gcal_event_id === g.id.replace("gcal_", "") || (m.title === g.title && m.date === g.date)
+            );
+            if (!alreadyExists) combined.push(g);
+          });
+          try { localStorage.setItem("circle_meetings_cache", JSON.stringify(combined)); } catch {}
+          return combined;
+        });
       }
-
-      // Merge workspace meetings and Google Calendar events without duplicates
-      const combined = [...workspaceMeetings];
-      gcalMeetings.forEach((g) => {
-        const alreadyExists = combined.some(
-          (m) => m.gcal_event_id === g.id.replace("gcal_", "") || (m.title === g.title && m.date === g.date)
-        );
-        if (!alreadyExists) {
-          combined.push(g);
-        }
-      });
-
-      setMeetings(combined);
     } catch (e) {
-      console.warn("Failed to load meetings:", e);
+      console.warn("GCal background sync note:", e);
     } finally {
       setLoading(false);
     }
@@ -405,10 +412,10 @@ export default function Schedule() {
                         href={m.meet_link}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-brand py-2 text-xs font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                        className="btn-accent flex-1 flex items-center justify-center gap-2 h-10 rounded-full px-4 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
                         data-testid={`join-meet-${m.id}`}
                       >
-                        <Video size={14} /> Join Google Meet
+                        <Video size={15} /> Join Google Meet
                       </a>
                     ) : (
                       <div className="flex-1 text-center py-2 text-xs font-medium text-sub">

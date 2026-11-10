@@ -6,27 +6,56 @@ import { api } from "../lib/api";
 import { Avatar, rel } from "./common";
 
 export function NotificationList({ onNavigate }) {
-  const { setUnread, userMap, subscribe } = useApp();
-  const [data, setData] = useState(null);
+  const { setUnread, userMap, subscribe, showTopNotif } = useApp();
+  const [data, setData] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_notifications_cache");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
   const [cat, setCat] = useState("all");
   const navigate = useNavigate();
-  const load = () => api.get("/notifications").then((r) => { setData(r.data); setUnread(r.data.unread); });
+  const load = () => api.get("/notifications").then((r) => {
+    setData(r.data);
+    setUnread(r.data.unread);
+    try { localStorage.setItem("circle_notifications_cache", JSON.stringify(r.data)); } catch {}
+  });
   useEffect(() => { load(); }, []); // eslint-disable-line
   useEffect(() => subscribe((e) => e.type === "notification" && load()), [subscribe]); // eslint-disable-line
   const open = async (n) => { await api.post(`/notifications/${n.id}/read`); load(); if (n.link) { navigate(n.link); onNavigate?.(); } };
   const cats = ["all", ...new Set((data?.items || []).map((n) => n.category))];
   const items = (data?.items || []).filter((n) => cat === "all" || n.category === cat);
+
+  const testPopup = () => {
+    showTopNotif({
+      id: `test_notif_${Date.now()}`,
+      title: "Permintaan Akses Masuk Baru",
+      body: "Jessica Iskandar (Marketing) mengajukan permohonan akses masuk",
+      type: "access_request",
+      category: "system",
+      access_request: {
+        id: `req_test_${Date.now()}`,
+        name: "Jessica Iskandar",
+        email: "jessica@asliri.id",
+        department: "Marketing",
+        job_title: "Brand Specialist",
+        status: "pending"
+      }
+    });
+  };
+
   return (
     <div className="flex h-full flex-col" data-testid="notification-list">
       <div className="flex items-center justify-between gap-2 border-b p-4">
         <div><p className="font-bold">Notifikasi</p><p className="text-xs text-sub">{data ? `${data.unread} belum dibaca` : ""}</p></div>
         <div className="flex items-center gap-1">
-          {"Notification" in window && Notification.permission === "default" && <button onClick={() => Notification.requestPermission()} className="rounded-full border px-2.5 py-1 text-[11px] font-semibold" data-testid="enable-push-btn">Aktifkan alert</button>}
+          <button onClick={testPopup} className="rounded-full bg-brand/10 text-brand px-2.5 py-1 text-[11px] font-bold hover:bg-brand/20 transition-colors" data-testid="test-popup-header-btn">Test Popup</button>
           <button onClick={() => api.post("/notifications/read-all").then(load)} className="btn-ghost flex h-9 items-center gap-1 px-2.5 text-xs font-semibold" data-testid="mark-all-read-btn"><CheckCheck size={14} />Tandai semua</button>
           {onNavigate && <button onClick={onNavigate} className="btn-ghost flex h-9 w-9 items-center justify-center" aria-label="Tutup" data-testid="close-notifications-btn"><X size={16} /></button>}
         </div>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-2 no-scrollbar">{cats.map((c) => <button key={c} onClick={() => setCat(c)} className={`h-7 whitespace-nowrap rounded-full px-3 text-[11px] font-semibold capitalize ${cat === c ? "bg-ink text-[var(--c-surface)]" : "bg-surface2 text-sub"}`} data-testid={`notif-cat-${c}`}>{c}</button>)}</div>
+      <div className="flex gap-1.5 overflow-x-auto border-b px-4 py-2 no-scrollbar">{cats.filter(Boolean).map((c) => <button key={`notif-cat-${c}`} onClick={() => setCat(c)} className={`h-7 whitespace-nowrap rounded-full px-3 text-[11px] font-semibold capitalize ${cat === c ? "bg-ink text-[var(--c-surface)]" : "bg-surface2 text-sub"}`} data-testid={`notif-cat-${c}`}>{c}</button>)}</div>
       <div className="flex-1 overflow-y-auto scroll-thin">
         {data && !items.length && <div className="p-10 text-center text-sm text-sub"><Bell className="mx-auto mb-2" size={22} />Semua sudah terbaca</div>}
         {items.map((n) => (
@@ -40,6 +69,7 @@ export function NotificationList({ onNavigate }) {
     </div>
   );
 }
+
 
 export function NotificationRail({ open, setOpen }) {
   const { unread } = useApp();

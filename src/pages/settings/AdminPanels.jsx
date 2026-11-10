@@ -3,9 +3,9 @@ import { Trash2, Plus, ArrowUp, ArrowDown, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../../context/AppContext";
 import { api, errMsg, uploadFile } from "../../lib/api";
-import { Avatar, LabelChip, ROLE_NAMES, rel, Logo } from "../../components/common";
+import { Avatar, LabelChip, ROLE_NAMES, rel, Logo, Spinner } from "../../components/common";
 import { Switch } from "../../components/ui/switch";
-import { ItemChip } from "../tasks/fields";
+import { ItemChip, DEFAULT_ITEM_TYPES } from "../tasks/fields";
 
 const inp = "h-10 rounded-xl border bg-surface2 px-3 text-sm outline-none";
 const run = async (fn, msg) => { try { await fn(); if (msg) toast.success(msg); return true; } catch (e) { toast.error(errMsg(e)); return false; } };
@@ -35,15 +35,49 @@ let AUDIT_LOGS_CACHE = null;
 let USERS_CACHE = null;
 let INVITES_CACHE = null;
 let ACCESS_REQ_CACHE = null;
+let DIVISIONS_CACHE = null;
+let STICKERS_CACHE = null;
+
+try {
+  const sStats = localStorage.getItem("circle_admin_stats");
+  if (sStats) ADMIN_STATS_CACHE = JSON.parse(sStats);
+  const sAudit = localStorage.getItem("circle_admin_audit");
+  if (sAudit) AUDIT_LOGS_CACHE = JSON.parse(sAudit);
+  const sUsers = localStorage.getItem("circle_admin_users");
+  if (sUsers) USERS_CACHE = JSON.parse(sUsers);
+  const sInvites = localStorage.getItem("circle_admin_invites");
+  if (sInvites) INVITES_CACHE = JSON.parse(sInvites);
+  const sAccess = localStorage.getItem("circle_admin_access_reqs");
+  if (sAccess) ACCESS_REQ_CACHE = JSON.parse(sAccess);
+  const sDivs = localStorage.getItem("circle_admin_divisions");
+  if (sDivs) DIVISIONS_CACHE = JSON.parse(sDivs);
+  const sStickers = localStorage.getItem("circle_admin_stickers_data");
+  if (sStickers) STICKERS_CACHE = JSON.parse(sStickers);
+} catch (e) {
+  console.warn("Failed to load admin cache", e);
+}
 
 export function AdminOverview() {
   const [s, setS] = useState(ADMIN_STATS_CACHE || INITIAL_ADMIN_STATS);
   const [logs, setLogs] = useState(AUDIT_LOGS_CACHE || INITIAL_AUDIT_LOGS);
+  const [loading, setLoading] = useState(!ADMIN_STATS_CACHE);
   const { userMap } = useApp();
 
   useEffect(() => {
-    api.get("/admin/stats").then((r) => { if (r.data) { ADMIN_STATS_CACHE = r.data; setS(r.data); } }).catch(() => {});
-    api.get("/admin/audit").then((r) => { if (Array.isArray(r.data) && r.data.length > 0) { AUDIT_LOGS_CACHE = r.data; setLogs(r.data); } }).catch(() => {});
+    api.get("/admin/stats").then((r) => { 
+      if (r.data) { 
+        ADMIN_STATS_CACHE = r.data; 
+        setS(r.data); 
+        localStorage.setItem("circle_admin_stats", JSON.stringify(r.data));
+      } 
+    }).catch(() => {});
+    api.get("/admin/audit").then((r) => { 
+      if (Array.isArray(r.data) && r.data.length > 0) { 
+        AUDIT_LOGS_CACHE = r.data; 
+        setLogs(r.data); 
+        localStorage.setItem("circle_admin_audit", JSON.stringify(r.data));
+      } 
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const stats = s ? [
@@ -57,8 +91,10 @@ export function AdminOverview() {
     ["Overdue tasks", s.overdue_tasks]
   ] : [];
 
+  if (loading && !ADMIN_STATS_CACHE) return <div className="py-20 text-center"><Spinner label="Admin stats" /></div>;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-crossfade">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4" data-testid="admin-stats">
         {stats.map(([l, v], i) => (
           <div
@@ -95,15 +131,28 @@ export function PeopleAccess() {
   const [users, setUsers] = useState(USERS_CACHE || []);
   const [invites, setInvites] = useState(INVITES_CACHE || []);
   const [accessRequests, setAccessRequests] = useState(ACCESS_REQ_CACHE || []);
+  const [loading, setLoading] = useState(!USERS_CACHE);
   const [reqFilter, setReqFilter] = useState("all");
   const [inv, setInv] = useState({ email: "", role: "employee" });
   const [domains, setDomains] = useState((ws.allowed_domains || []).join(", "));
   const [busyAction, setBusyAction] = useState(null);
 
   const load = () => {
-    api.get("/admin/users").then((r) => { USERS_CACHE = r.data; setUsers(r.data); }).catch(() => {});
-    api.get("/admin/invitations").then((r) => { INVITES_CACHE = r.data; setInvites(r.data); }).catch(() => {});
-    api.get("/admin/access-requests").then((r) => { ACCESS_REQ_CACHE = r.data; setAccessRequests(r.data); }).catch(() => {});
+    api.get("/admin/users").then((r) => { 
+      USERS_CACHE = r.data; 
+      setUsers(r.data); 
+      localStorage.setItem("circle_admin_users", JSON.stringify(r.data));
+    }).catch(() => {});
+    api.get("/admin/invitations").then((r) => { 
+      INVITES_CACHE = r.data; 
+      setInvites(r.data); 
+      localStorage.setItem("circle_admin_invites", JSON.stringify(r.data));
+    }).catch(() => {});
+    api.get("/admin/access-requests").then((r) => { 
+      ACCESS_REQ_CACHE = r.data; 
+      setAccessRequests(r.data); 
+      localStorage.setItem("circle_admin_access_reqs", JSON.stringify(r.data));
+    }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -156,8 +205,10 @@ export function PeopleAccess() {
     return true;
   });
 
+  if (loading && !USERS_CACHE) return <div className="py-20 text-center"><Spinner label="People & access" /></div>;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-crossfade">
       {/* 1. Access Requests from "Circle" Assistant */}
       <Card title={`Permintaan Akses Masuk (${accessRequests.length})`} testid="access-requests-card">
         <div className="flex flex-col gap-3">
@@ -405,12 +456,19 @@ export function WorkspaceBranding() {
 
 export function DivisionsAdmin() {
   const { reloadWs } = useApp();
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(DIVISIONS_CACHE || []);
   const [n, setN] = useState("");
-  useEffect(() => { api.get("/workspace").then((r) => setList(r.data.divisions || [])); }, []);
-  const save = (l) => run(() => api.patch("/workspace", { divisions: l }), "Divisi disimpan").then((ok) => { if (ok) { setList(l); reloadWs(); } });
+  useEffect(() => { 
+    api.get("/workspace").then((r) => {
+      const divs = r.data.divisions || [];
+      DIVISIONS_CACHE = divs;
+      setList(divs);
+      localStorage.setItem("circle_admin_divisions", JSON.stringify(divs));
+    }); 
+  }, []);
+  const save = (l) => run(() => api.patch("/workspace", { divisions: l }), "Divisi disimpan").then((ok) => { if (ok) { setList(l); reloadWs(); localStorage.setItem("circle_admin_divisions", JSON.stringify(l)); } });
   const add = () => { if (n.trim() && !list.includes(n.trim())) { save([...list, n.trim()]); setN(""); } };
-  if (!list) return null;
+  if (!list && !DIVISIONS_CACHE) return null;
   return (
     <Card title="Daftar divisi (form profil karyawan baru)" testid="divisions-admin">
       <div className="flex gap-2"><input value={n} onChange={(e) => setN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Nama divisi" className={`${inp} flex-1`} data-testid="division-name-input" /><button onClick={add} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="division-add-btn"><Plus size={14} /></button></div>
@@ -430,18 +488,28 @@ function ColorSwatch({ value, onSave, testid }) {
 export function ItemTypesAdmin() {
   const { ws, reloadWs } = useApp();
   const [n, setN] = useState("");
-  const list = ws.item_types || [];
+  const [color, setColor] = useState("#2563EB");
+  const rawList = ws.item_types || [];
+  const combinedMap = new Map();
+  DEFAULT_ITEM_TYPES.forEach((i) => combinedMap.set(i.name.toLowerCase(), i));
+  rawList.forEach((i) => combinedMap.set(i.name.toLowerCase(), i));
+  const list = Array.from(combinedMap.values());
+
   const save = (l, msg) => run(() => api.patch("/workspace", { item_types: l }), msg).then(reloadWs);
-  const add = () => n.trim() && run(() => api.post("/item-types", { name: n.trim() }), "Item ditambahkan").then(() => { setN(""); reloadWs(); });
+  const add = () => n.trim() && run(() => api.post("/item-types", { name: n.trim(), color }), "Item ditambahkan").then(() => { setN(""); reloadWs(); });
   return (
     <Card title="Jenis item task (kolom Item)" testid="item-types-admin">
-      <p className="mb-3 text-xs text-sub">Semua orang bisa menambah item baru dari tabel task. Di sini admin bisa mengubah warna atau menghapusnya.</p>
-      <div className="flex gap-2"><input value={n} onChange={(e) => setN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Nama item" className={`${inp} flex-1`} data-testid="item-type-name-input" /><button onClick={add} className="btn-accent h-10 px-4 text-sm font-semibold" data-testid="item-type-add-btn"><Plus size={14} /></button></div>
-      <div className="mt-3 divide-y">{list.map((it, i) => (
+      <p className="mb-3 text-xs text-sub">Daftar item resmi dan kustom untuk task. Anda bisa menambahkan jenis item baru, mengubah warna, atau menghapusnya.</p>
+      <div className="flex items-center gap-2">
+        <input value={n} onChange={(e) => setN(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Nama item baru..." className={`${inp} flex-1`} data-testid="item-type-name-input" />
+        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-10 w-10 cursor-pointer rounded-lg border p-1" title="Pilih warna item" />
+        <button onClick={add} className="btn-accent h-10 px-4 text-sm font-semibold cursor-pointer" data-testid="item-type-add-btn"><Plus size={14} /> Tambah</button>
+      </div>
+      <div className="mt-3 divide-y max-h-96 overflow-y-auto pr-1">{list.map((it, i) => (
         <div key={it.name} className="flex items-center gap-3 py-2" data-testid={`item-type-row-${it.name.replace(/\s/g, "-")}`}>
           <ColorSwatch value={it.color} onSave={(c) => save(list.map((x, j) => (j === i ? { ...x, color: c } : x)), "Warna disimpan")} testid={`item-type-color-${it.name.replace(/\s/g, "-")}`} />
           <span className="flex-1"><ItemChip name={it.name} /></span>
-          <button onClick={() => save(list.filter((_, j) => j !== i), "Item dihapus")} className="text-sub hover:text-rose-500" aria-label={`Hapus ${it.name}`} data-testid={`item-type-remove-${it.name.replace(/\s/g, "-")}`}><Trash2 size={14} /></button>
+          <button onClick={() => save(list.filter((_, j) => j !== i), "Item dihapus")} className="text-sub hover:text-rose-500 cursor-pointer" aria-label={`Hapus ${it.name}`} data-testid={`item-type-remove-${it.name.replace(/\s/g, "-")}`}><Trash2 size={14} /></button>
         </div>))}</div>
     </Card>
   );
@@ -514,8 +582,12 @@ export function ProfileFieldsAdmin() {
 
 export function StickersAdmin() {
   const [name, setName] = useState("");
-  const [data, setData] = useState(null);
-  const load = () => api.get("/stickers").then((r) => setData(r.data));
+  const [data, setData] = useState(STICKERS_CACHE);
+  const load = () => api.get("/stickers").then((r) => { 
+    setData(r.data); 
+    STICKERS_CACHE = r.data;
+    localStorage.setItem("circle_admin_stickers_data", JSON.stringify(r.data));
+  });
   useEffect(() => { load(); }, []);
 
   const handleCreatePack = async () => {

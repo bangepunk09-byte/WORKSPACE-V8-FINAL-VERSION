@@ -77,12 +77,51 @@ const WIDGET_LABELS = {
   }
 };
 
+import { INITIAL_TASKS } from "../data/initialTasks";
+
 export default function Dashboard() {
   const { me, prefs, userMap, statuses, t, lang } = useApp();
-  const [tasks, setTasks] = useState([]);
-  const [meetings, setMeetings] = useState([]);
-  const [posts, setPosts] = useState([]);
-  const [conversations, setConversations] = useState([]);
+  // Dashboard Data Caching & Hydration
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_cache_tasks");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return INITIAL_TASKS.slice(0, 8);
+  });
+  const [meetings, setMeetings] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_cache_meetings");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [posts, setPosts] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_cache_posts");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [
+      {
+        id: "pst_init_1",
+        author_id: "user_admin1",
+        text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info & diskusi.",
+        created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+      }
+    ];
+  });
+  const [conversations, setConversations] = useState(() => {
+    try {
+      const saved = localStorage.getItem("circle_cache_conversations");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
   const [loading, setLoading] = useState(false);
   const [bgOpen, setBgOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
@@ -173,6 +212,12 @@ export default function Dashboard() {
       setMeetings(mRes.data || []);
       setPosts(pRes.data || []);
       setConversations(cRes.data || []);
+
+      // Update Cache
+      localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || []));
+      localStorage.setItem("circle_cache_meetings", JSON.stringify(mRes.data || []));
+      localStorage.setItem("circle_cache_posts", JSON.stringify(pRes.data || []));
+      localStorage.setItem("circle_cache_conversations", JSON.stringify(cRes.data || []));
     } catch (e) {
       console.warn("Failed to load dashboard data:", e);
     } finally {
@@ -304,7 +349,9 @@ export default function Dashboard() {
 
         {/* Cards List */}
         <div className={densityStyles.itemSpacing}>
-          {displayMeetings.length === 0 ? (
+          {loading ? (
+            <div className="flex h-32 items-center justify-center"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-emerald-500" /></div>
+          ) : displayMeetings.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed">
               <CalendarDays size={24} className="text-sub mb-2 opacity-50" />
               <p className="text-xs font-semibold text-ink">Tidak ada meeting hari ini</p>
@@ -401,7 +448,9 @@ export default function Dashboard() {
 
         {/* Tasks List */}
         <div className={densityStyles.itemSpacing}>
-          {todayTasks.length === 0 ? (
+          {loading ? (
+            <div className="flex h-32 items-center justify-center"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-amber-500" /></div>
+          ) : todayTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed">
               <CheckSquare size={24} className="text-sub mb-2 opacity-50" />
               <p className="text-xs font-semibold text-ink">Semua tugas selesai</p>
@@ -510,7 +559,9 @@ export default function Dashboard() {
         </div>
 
         {/* Feed Card: Latest Post or Empty State */}
-        {posts.length === 0 ? (
+        {loading ? (
+            <div className="flex h-32 items-center justify-center"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-purple-500" /></div>
+        ) : posts.length === 0 ? (
           <div className={`rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 ${densityStyles.itemPadding} text-center py-6`}>
             <MessageSquare size={22} className="mx-auto text-sub mb-2 opacity-50" />
             <p className="text-xs font-semibold text-ink">Belum ada postingan di Feed</p>

@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Columns3, ArrowUp, ArrowDown, Eye, EyeOff, P
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
-import { PRIORITY, dueInfo, fmtDate } from "../../components/common";
+import { PRIORITY, dueInfo, fmtDate, AvatarStack } from "../../components/common";
 import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
 import { TaskCard } from "./Board";
 import { ItemPicker, ItemChip } from "./fields";
@@ -33,7 +33,55 @@ function Cell({ k, t, projects, patch, onOpen }) {
   const { userMap, users, statuses, labels, labelMap, ws } = useApp();
   const done = statuses.find((s) => s.key === t.status)?.is_done;
   switch (k) {
-    case "assignee_id": return <select value={t.assignee_id || ""} onChange={(e) => patch(t, { assignee_id: e.target.value || null })} className={`${pill} bg-surface2`} data-testid={`sheet-name-${t.id}`}><option value="">—</option>{users.map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>;
+    case "assignee_id": {
+      const uids = t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="flex h-7 w-full min-w-0 items-center gap-1.5 rounded-full bg-surface2 px-2 text-left text-xs hover:ring-1 hover:ring-brand/40 transition-all cursor-pointer"
+              data-testid={`sheet-name-${t.id}`}
+            >
+              {uids.length > 0 ? (
+                <>
+                  <AvatarStack ids={uids} max={2} size={18} />
+                  <span className="truncate flex-1 font-medium">
+                    {uids.map((id) => userMap[id]?.name?.split(" ")[0]).filter(Boolean).join(", ")}
+                  </span>
+                </>
+              ) : (
+                <span className="text-sub">— Unassigned</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 bg-surface p-2 shadow-xl rounded-2xl border" align="start">
+            <p className="px-2 py-1 text-[11px] font-bold text-sub uppercase">Pilih Assignee ({uids.length} orang)</p>
+            <div className="max-h-48 overflow-y-auto space-y-0.5">
+              {users.filter((u) => !u.is_bot && u.user_id !== "user_circle_assistant").map((u) => {
+                const on = uids.includes(u.user_id);
+                return (
+                  <button
+                    key={u.user_id}
+                    type="button"
+                    onClick={() => {
+                      const next = on ? uids.filter((id) => id !== u.user_id) : [...uids, u.user_id];
+                      patch(t, { assignee_ids: next, assignee_id: next[0] || null });
+                    }}
+                    className={`flex w-full items-center justify-between rounded-xl px-2 py-1.5 text-xs transition-colors cursor-pointer ${
+                      on ? "bg-brand/10 font-bold text-brand" : "hover:bg-surface2"
+                    }`}
+                  >
+                    <span className="truncate">{u.name}</span>
+                    {on && <span className="text-brand font-bold text-xs">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </PopoverContent>
+        </Popover>
+      );
+    }
     case "label_ids": {
       const l = labelMap[t.label_ids?.[0]];
       const set = (id) => patch(t, { label_ids: id ? [id, ...(t.label_ids || []).slice(1).filter((x) => x !== id)] : (t.label_ids || []).slice(1) });
@@ -131,11 +179,32 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
   const visible = cols.filter((c) => !(cfg.hidden || []).includes(c[0]));
   const total = 4 + visible.reduce((s, c) => s + c[2], 0);
   const patch = async (t, body) => { try { await api.patch(`/tasks/${t.id}`, body); reload(); } catch (e) { toast.error(errMsg(e)); } };
-  const val = (t, k) => (k === "assignee_id" ? userMap[t.assignee_id]?.name : k === "label_ids" ? labelMap[t.label_ids?.[0]]?.name : t[k]) ?? "";
+  const val = (t, k) => {
+    if (k === "assignee_id") {
+      const uids = t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
+      return uids.map((id) => userMap[id]?.name).filter(Boolean).join(", ");
+    }
+    if (k === "label_ids") return labelMap[t.label_ids?.[0]]?.name ?? "";
+    return t[k] ?? "";
+  };
   const sorted = useMemo(() => [...tasks].sort((a, b) => { const x = val(a, sort.k); const y = val(b, sort.k); return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; }), [tasks, sort, userMap, labelMap]); // eslint-disable-line
   const groups = useMemo(() => {
     if (groupBy === "status") return statuses.map((s) => [s.key, s.name, s.color, sorted.filter((t) => t.status === s.key)]);
-    if (groupBy === "assignee") { const ids = [...new Set(sorted.map((t) => t.assignee_id || ""))]; return ids.map((id) => [id || "none", userMap[id]?.name || "Unassigned", "var(--s-blue)", sorted.filter((t) => (t.assignee_id || "") === id)]); }
+    if (groupBy === "assignee") {
+      const ids = [...new Set(sorted.flatMap((t) => {
+        const uids = t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
+        return uids.length ? uids : [""];
+      }))];
+      return ids.map((id) => [
+        id || "none",
+        userMap[id]?.name || "Unassigned",
+        "var(--s-blue)",
+        sorted.filter((t) => {
+          const uids = t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
+          return id ? uids.includes(id) : !uids.length;
+        })
+      ]);
+    }
     if (groupBy === "department") { const ds = [...new Set(sorted.map((t) => t.department || ""))]; return ds.map((d) => [d || "none", d || "No department", "var(--s-green)", sorted.filter((t) => (t.department || "") === d)]); }
     if (groupBy === "label") { const ls = [...new Set(sorted.flatMap((t) => (t.label_ids?.length ? t.label_ids : [""])))]; return ls.map((l) => [l || "none", labelMap[l]?.name || "No label", labelMap[l] ? `${labelMap[l].color}33` : "var(--s-yellow)", sorted.filter((t) => (l ? t.label_ids?.includes(l) : !t.label_ids?.length))]); }
     return [["all", null, null, sorted]];
@@ -176,7 +245,7 @@ export default function ListView({ tasks, projects, onOpen, selected, setSelecte
                     </tbody>
                   </table>
                 </div>
-                <div className="space-y-2 md:hidden">{items.slice(0, lim).map((t) => <div key={t.id} className="flex items-start gap-2"><input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggleSel(t.id)} className="mt-4 h-5 w-5 accent-[var(--c-accent)]" aria-label="Select task" /><div className="min-w-0 flex-1"><TaskCard t={t} onOpen={onOpen} done={statuses.find((s) => s.key === t.status)?.is_done} />{t.item_type && <div className="mt-1 pl-1"><ItemChip name={t.item_type} small /></div>}</div></div>)}</div>
+                <div className="space-y-2 md:hidden">{items.slice(0, lim).map((t) => <div key={`${t.id}_${t.updated_at || t.created_at || '1'}`} className="flex items-start gap-2"><input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggleSel(t.id)} className="mt-4 h-5 w-5 accent-[var(--c-accent)]" aria-label="Select task" /><div className="min-w-0 flex-1"><TaskCard t={t} onOpen={onOpen} done={statuses.find((s) => s.key === t.status)?.is_done} reload={reload} />{t.item_type && <div className="mt-1 pl-1"><ItemChip name={t.item_type} small /></div>}</div></div>)}</div>
                 {items.length > lim && <button onClick={() => setLimit({ ...limit, [key]: lim + 100 })} className="mt-2 text-sm font-semibold text-brand">Show more ({items.length - lim})</button>}
               </>}
             </section>

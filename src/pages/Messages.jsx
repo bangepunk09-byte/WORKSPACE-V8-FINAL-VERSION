@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Plus, Search, MessageCircle } from "lucide-react";
+import { Plus, Search, MessageCircle, ShieldCheck } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { api } from "../lib/api";
-import { Avatar, Empty, fmtTime, GroupIcon } from "../components/common";
+import { Avatar, Empty, fmtTime, GroupIcon, Spinner } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import ChatView from "./chat/ChatView";
 
@@ -42,6 +42,7 @@ export default function Messages() {
   const { cid } = useParams();
   const { me, userMap, subscribe } = useApp();
   const [convs, setConvs] = useState(Array.isArray(CONVS_CACHE) ? CONVS_CACHE : []);
+  const [loading, setLoading] = useState(!convs.length);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
   const [dm, setDm] = useState(false);
@@ -52,7 +53,7 @@ export default function Messages() {
     setConvs(arr);
     CONVS_CACHE = arr;
     try { localStorage.setItem("circle_convs_cache", JSON.stringify(arr)); } catch {}
-  }).catch(() => {});
+  }).catch(() => {}).finally(() => setLoading(false));
 
   useEffect(() => { load(); }, [cid]); // eslint-disable-line
 
@@ -88,14 +89,13 @@ export default function Messages() {
     if (!c) return { id: `conv_${Math.random()}`, title: "Conversation", other: null };
     const mems = Array.isArray(c.member_ids) ? c.member_ids : (Array.isArray(c.members) ? c.members : []);
     const otherId = mems.find((x) => x !== me?.user_id) || me?.user_id;
-    const isCircle = otherId === "user_circle_assistant" || (c.name || "").toLowerCase().includes("circle");
-
     const botAvatar = ws?.assistant_avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364";
     const botName = ws?.assistant_name || "Circle";
 
+    const isBotDM = c.type === "dm" && (otherId === "user_circle_assistant" || c.id?.includes("circle"));
     const rawOther = userMap ? userMap[otherId] : null;
     const other = c.type === "dm" ? (
-      isCircle ? {
+      isBotDM ? {
         ...(rawOther || {}),
         user_id: "user_circle_assistant",
         name: botName,
@@ -105,10 +105,13 @@ export default function Messages() {
       } : rawOther
     ) : null;
 
+    let title = c.name || "Group Chat";
+    if (c.type === "dm") title = other?.name || botName;
+
     return {
       ...c,
       other,
-      title: isCircle ? botName : (other?.name || c.name || "Conversation")
+      title
     };
   }), [safeConvs, userMap, me, ws?.assistant_name, ws?.assistant_avatar]);
   const list = named.filter((c) => (tab === "all" || (tab === "dm" ? c.type === "dm" : c.type === "group")) && (c.title || "").toLowerCase().includes(q.toLowerCase()));
@@ -124,17 +127,25 @@ export default function Messages() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-2 scroll-thin">
-          {list.map((c) => (
+          {loading ? (
+            <div className="flex h-32 items-center justify-center"><Spinner label="Messages" /></div>
+          ) : list.map((c) => (
             <button key={c.id} onClick={() => navigate(`/messages/${c.id}`)} data-testid={`conversation-item-${c.id}`}
               className={`flex w-full items-center gap-3 rounded-2xl p-2.5 text-left transition-colors ${cid === c.id ? "bg-soft-red" : "hover:bg-surface2"}`}>
               {c.other ? <Avatar user={c.other} size={42} /> : <GroupIcon c={c} size={42} />}
               <span className="min-w-0 flex-1">
-                <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{c.title}</span><span className="shrink-0 text-[10px] text-sub">{fmtTime(c.last_message_at)}</span></span>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1 min-w-0">
+                    <span className="truncate text-sm font-semibold">{c.title}</span>
+                    {c.is_verified && <ShieldCheck size={13} className="shrink-0 text-blue-500 fill-blue-500/10" />}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-sub">{fmtTime(c.last_message_at)}</span>
+                </span>
                 <span className="flex items-center justify-between gap-2"><span className="truncate text-xs text-sub">{c.last_message_preview || "No messages yet"}</span>{c.unread > 0 && <span className="rounded-full bg-brand px-1.5 text-[10px] font-bold text-white" data-testid="conversation-unread">{c.unread}</span>}</span>
               </span>
             </button>
           ))}
-          {!list.length && <Empty icon={MessageCircle} title="No conversations" text="Start a direct message or join a group." />}
+          {!loading && !list.length && <Empty icon={MessageCircle} title="No conversations" text="Start a direct message or join a group." />}
         </div>
       </aside>
       <section className={`${cid ? "flex" : "hidden lg:flex"} min-w-0 flex-1`}>

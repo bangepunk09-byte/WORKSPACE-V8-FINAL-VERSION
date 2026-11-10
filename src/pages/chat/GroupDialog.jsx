@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { ShieldCheck } from "lucide-react";
 import { api, errMsg, fileUrl, uploadFile } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Avatar } from "../../components/common";
@@ -42,7 +43,17 @@ export function GroupDialog({ open, onOpenChange, group, onSaved }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-surface rounded-3xl max-w-md max-h-[90dvh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{group ? "Edit group" : "Create group"}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <DialogTitle>{group ? "Edit group" : "Create group"}</DialogTitle>
+            {me.role === "super_admin" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                <ShieldCheck size={10} strokeWidth={3} />
+                OFFICIAL
+              </span>
+            )}
+          </div>
+        </DialogHeader>
         {me.role === "super_admin" ? <div className="flex items-center gap-3">
           {f.image ? <img src={fileUrl(f.image)} alt="" className="h-14 w-14 rounded-2xl object-cover" /> : <span className="h-14 w-14 rounded-2xl bg-soft-purple" />}
           <label className="cursor-pointer text-sm font-semibold text-brand">Upload foto grup<input type="file" accept="image/*" hidden onChange={img} data-testid="group-image-input" /></label>

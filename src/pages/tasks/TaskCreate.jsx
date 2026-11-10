@@ -5,7 +5,7 @@ import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import RichEditor from "../../components/RichEditor";
-import { inp, UserSelect, PrioritySelect, LabelPicker, ItemPicker, ColorPicker, AttachmentList, useUploader, ListEditor } from "./fields";
+import { inp, UserSelect, MultiUserSelect, PrioritySelect, LabelPicker, ItemPicker, ColorPicker, AttachmentList, useUploader, ListEditor } from "./fields";
 import { playSound } from "../../lib/sound";
 
 const blank = (me, d = {}) => ({
@@ -13,6 +13,7 @@ const blank = (me, d = {}) => ({
   description: "",
   requestor_ids: me?.user_id ? [me.user_id] : [],
   assignee_id: null,
+  assignee_ids: [],
   priority: "medium",
   deadline_date: "",
   deadline_time: "",
@@ -259,9 +260,16 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
     if (!f.title.trim()) return toast.error("Task title is required");
     setBusy(true);
     try {
+      const assigneeIds = Array.isArray(f.assignee_ids) && f.assignee_ids.length
+        ? f.assignee_ids.filter(Boolean)
+        : (f.assignee_id ? [f.assignee_id] : []);
+      const primaryAssigneeId = assigneeIds[0] || null;
+
       const { deadline_date, deadline_time, ...rest } = f;
       const { data } = await api.post("/tasks", {
         ...rest,
+        assignee_id: primaryAssigneeId,
+        assignee_ids: assigneeIds,
         requestor_ids: f.requestor_ids && f.requestor_ids.length ? f.requestor_ids : [me.user_id],
         reviewer_ids: f.requestor_ids && f.requestor_ids.length ? f.requestor_ids : [me.user_id],
         project_id: f.project_id || null,
@@ -317,8 +325,8 @@ export default function TaskCreate({ open, onOpenChange, preset, defaults, onCre
               </div>
             </Row>
 
-            <Row label="Board"><select value={f.board_id || ""} onChange={(e) => setF((x) => ({ ...x, board_id: e.target.value, assignee_id: null }))} className={inp} data-testid="task-board-select">{!boards.length && <option value="">Belum ada board</option>}{boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Row>
-            <Row label="Assignee"><UserSelect value={f.assignee_id} onChange={set("assignee_id")} ids={members} testid="task-assignee-select" /></Row>
+            <Row label="Board"><select value={f.board_id || ""} onChange={(e) => setF((x) => ({ ...x, board_id: e.target.value, assignee_id: null, assignee_ids: [] }))} className={inp} data-testid="task-board-select">{!boards.length && <option value="">Belum ada board</option>}{boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Row>
+            <Row label="Assignee" hint="Bisa assign 2 orang atau lebih (otomatis tercatat bersama)"><MultiUserSelect value={f.assignee_ids || (f.assignee_id ? [f.assignee_id] : [])} onChange={(ids) => setF((prev) => ({ ...prev, assignee_ids: ids, assignee_id: ids[0] || null }))} ids={members} testid="task-assignee-select" /></Row>
             <Row label="Priority"><PrioritySelect value={f.priority} onChange={set("priority")} testid="task-priority-select" /></Row>
             <Row label="Deadline"><div className="flex gap-2"><input type="date" value={f.deadline_date} onChange={set("deadline_date")} className={inp} data-testid="task-deadline-input" /><input type="time" value={f.deadline_time} onChange={set("deadline_time")} className={`${inp} w-32`} data-testid="task-deadline-time-input" /></div></Row>
 

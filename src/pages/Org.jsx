@@ -121,18 +121,39 @@ function Table({ units, reload, canMove }) {
 }
 
 const INITIAL_UNITS = [
-  { id: "unit_1", name: "Engineering", level: 1, head_id: "user_admin1", parent_id: null }
+  { id: "unit_exec", name: "Board of Directors & Management", level: "Executive", head_id: "user_superadmin_saeful", parent_id: null },
+  { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_siti", parent_id: "unit_exec" },
+  { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_budi", parent_id: "unit_exec" },
+  { id: "unit_ops", name: "Operations & Infrastructure", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
+  { id: "unit_mkt", name: "Marketing & Growth", level: "Department", head_id: null, parent_id: "unit_exec" }
 ];
+
+let ORG_UNITS_CACHE = INITIAL_UNITS;
+try {
+  const saved = localStorage.getItem("circle_org_units_cache");
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) ORG_UNITS_CACHE = parsed;
+  }
+} catch {}
 
 export default function Org() {
   const { users, ws, isAdmin, isManager, reloadUsers } = useApp();
-  const [units, setUnits] = useState(INITIAL_UNITS);
+  const [units, setUnits] = useState(ORG_UNITS_CACHE);
+  const [loading, setLoading] = useState(!ORG_UNITS_CACHE || ORG_UNITS_CACHE.length === 0);
   const [view, setView] = useState("chart");
   const [q, setQ] = useState("");
   const [dlg, setDlg] = useState(null);
   const [delUnit, setDelUnit] = useState(null);
   const fileRef = useRef(null);
-  const load = () => api.get("/org/units").then((r) => { if (Array.isArray(r.data) && r.data.length > 0) setUnits(r.data); }).catch(() => {});
+
+  const load = () => api.get("/org/units").then((r) => {
+    if (Array.isArray(r.data) && r.data.length > 0) {
+      setUnits(r.data);
+      localStorage.setItem("circle_org_units_cache", JSON.stringify(r.data));
+    }
+  }).catch(() => {}).finally(() => setLoading(false));
+
   useEffect(() => { load(); }, []);
   const reload = () => { load(); reloadUsers(); };
   const { tree, members, totals, roots } = useMemo(() => {
@@ -153,22 +174,23 @@ export default function Org() {
   };
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="org-page">
-      <PageHeader icon={Network} title="Organization" subtitle="Your company structure. Drag units or people to reorganize." actions={<>
+      <PageHeader icon={Network} title="Organization" subtitle="Struktur perusahaan Anda. Geser unit atau orang untuk menata ulang." actions={<>
         {isManager && <GhostButton onClick={() => downloadFrom("/org/export", {}, "organization.csv").then(() => toast.success("Exported"))} data-testid="org-export-btn"><Download size={15} />Export</GhostButton>}
         {isAdmin && <><GhostButton onClick={() => fileRef.current.click()} data-testid="org-import-btn"><Upload size={15} />Import CSV</GhostButton><input ref={fileRef} type="file" accept=".csv" hidden onChange={importCsv} />
           <button onClick={() => setDlg({ parent_id: roots[0]?.id })} className="btn-accent flex h-10 items-center gap-2 px-4 text-sm font-semibold" data-testid="org-add-unit-btn"><Plus size={16} />Add unit</button></>}
       </>} />
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <div className="flex rounded-full border bg-surface p-1 text-sm font-medium">{["chart", "table"].map((v) => <button key={v} onClick={() => setView(v)} className={`rounded-full px-4 py-1.5 capitalize ${view === v ? "bg-ink text-[var(--c-surface)]" : "text-sub"}`} data-testid={`org-view-${v}`}>{v === "chart" ? "Chart" : "Management table"}</button>)}</div>
-        {view === "chart" && <div className="flex h-10 flex-1 min-w-[200px] items-center gap-2 rounded-full border bg-surface px-4"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find an employee in the chart" className="flex-1 bg-transparent text-sm outline-none" data-testid="org-search-input" /></div>}
+        {view === "chart" && <div className="flex h-10 flex-1 min-w-[200px] items-center gap-2 rounded-full border bg-surface px-4"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari karyawan di bagan" className="flex-1 bg-transparent text-sm outline-none" data-testid="org-search-input" /></div>}
         {isAdmin && <p className="w-full text-xs text-sub">Levels: {(ws.org_levels || []).join(" → ")} → Employee (edit levels in Settings → Workspace)</p>}
       </div>
-      {view === "chart" ? <>
+      {loading ? <Spinner label="Struktur Organisasi" /> : view === "chart" ? <>
         {roots.map((r) => <Node key={r.id} unit={r} tree={tree} members={members} depth={0} ctx={ctx} />)}
-        {unassigned.length > 0 && <div className="mt-6 rounded-2xl border border-dashed p-4"><p className="mb-2 text-sm font-semibold">Unassigned ({unassigned.length})</p><div className="flex flex-wrap gap-2">{unassigned.map((u) => <span key={u.user_id} draggable={isManager} onDragStart={(e) => e.dataTransfer.setData("text/plain", JSON.stringify({ user: u.user_id }))} className="flex items-center gap-2 rounded-full border bg-surface py-1 pl-1 pr-3 text-xs"><Avatar user={u} size={24} showStatus={false} />{u.name}</span>)}</div></div>}
+        {unassigned.length > 0 && <div className="mt-6 rounded-2xl border border-dashed p-4"><p className="mb-2 text-sm font-semibold">Belum Ditugaskan ({unassigned.length})</p><div className="flex flex-wrap gap-2">{unassigned.map((u) => <span key={u.user_id} draggable={isManager} onDragStart={(e) => e.dataTransfer.setData("text/plain", JSON.stringify({ user: u.user_id }))} className="flex items-center gap-2 rounded-full border bg-surface py-1 pl-1 pr-3 text-xs"><Avatar user={u} size={24} showStatus={false} />{u.name}</span>)}</div></div>}
       </> : <Table units={units} reload={reload} canMove={isManager} />}
       <UnitDialog state={dlg} setState={setDlg} units={units} levels={ws.org_levels || ["Company", "Division", "Department", "Team"]} onDone={reload} />
       <DeleteDialog unit={delUnit} setUnit={setDelUnit} units={units} counts={{ kids: (tree[delUnit?.id] || []).length, members: (members[delUnit?.id] || []).length }} onDone={reload} />
     </div>
   );
 }
+

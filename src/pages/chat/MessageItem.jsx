@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Reply, Smile, Pencil, Trash2, Pin, CheckSquare, FileText, Phone, PhoneMissed, MoreHorizontal, Check, CheckCheck } from "lucide-react";
+import { Reply, Smile, Pencil, Trash2, Pin, CheckSquare, FileText, MoreHorizontal, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, fileUrl } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
@@ -321,16 +321,7 @@ export default function MessageItem({ m, mine, grouped, conv, onReply, onCreateT
   const react = (emoji) => act(() => api.post(`/messages/${m.id}/react`, { emoji }))();
   const save = act(async () => { await api.patch(`/messages/${m.id}`, { text: val }); setEditing(false); });
 
-  if (m.type === "call") {
-    return (
-      <div className="my-2 flex justify-center" data-testid={`message-${m.id}`}>
-        <span className="flex items-center gap-2 rounded-full bg-surface2 px-3 py-1.5 text-xs text-sub">
-          {m.call?.missed ? <PhoneMissed size={13} className="text-rose-500" /> : <Phone size={13} />}
-          {m.call?.missed ? `Missed ${m.call.media} call` : `${m.text} · ${Math.floor((m.call?.duration || 0) / 60)}m ${(m.call?.duration || 0) % 60}s`} · {fmtTime(m.created_at)}
-        </span>
-      </div>
-    );
-  }
+
   const bubble = mine ? "bg-brand text-white rounded-br-md" : "bg-surface border rounded-bl-md";
   const images = (m.attachments || []).filter((a) => a.content_type?.startsWith("image/"));
   const docs = (m.attachments || []).filter((a) => !a.content_type?.startsWith("image/"));

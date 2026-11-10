@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Archive, Share2, Paperclip, CheckCircle2, RotateCcw, Send, MessageSquare, History, Link2, Pencil } from "lucide-react";
+import { Archive, Share2, Paperclip, CheckCircle2, RotateCcw, Send, MessageSquare, History, Link2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import { Avatar, Spinner, fmtDate, rel, dueInfo } from "../../components/common";
 import RichEditor, { RichView } from "../../components/RichEditor";
-import { inp, UserSelect, PrioritySelect, LabelPicker, ItemPicker, ColorPicker, AttachmentList, useUploader, ListEditor } from "./fields";
+import { inp, UserSelect, MultiUserSelect, PrioritySelect, LabelPicker, ItemPicker, ColorPicker, AttachmentList, useUploader, ListEditor } from "./fields";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../components/ui/select";
 import { toDeadline } from "./TaskCreate";
 import Checkpoints, { CommentItem } from "./Checkpoints";
 import { playSound } from "../../lib/sound";
@@ -86,7 +87,18 @@ export default function TaskDetail({ id, onClose, onChanged }) {
   return (
     <Sheet open={!!id} onOpenChange={(v) => !v && onClose()}>
       <SheetContent className="w-full overflow-y-auto bg-surface p-0 sm:max-w-2xl" data-testid="task-detail-panel">
-        <SheetHeader className="sr-only"><SheetTitle>Task details</SheetTitle></SheetHeader>
+        <SheetHeader className="flex flex-row items-center justify-between border-b px-6 py-4">
+          <SheetTitle className="text-base font-bold">Detail Tugas</SheetTitle>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 text-sub hover:bg-surface2 hover:text-ink transition-colors cursor-pointer"
+            aria-label="Tutup detail"
+            data-testid="task-detail-close-btn"
+          >
+            <X size={18} />
+          </button>
+        </SheetHeader>
         {!t ? <Spinner /> : (
           <div className="animate-task-reveal pb-10">
             <div className="h-2" style={{ background: t.card_color || "transparent" }} />
@@ -163,8 +175,35 @@ export default function TaskDetail({ id, onClose, onChanged }) {
               )}
 
               <div className="space-y-3">
-                <Row label="Board"><select value={t.board_id || ""} disabled={ro} onChange={(e) => patch({ board_id: e.target.value }, "Task dipindah ke board lain")} className={inp} data-testid="task-detail-board">{!boards.some((b) => b.id === t.board_id) && t.board && <option value={t.board.id}>{t.board.name}</option>}{boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Row>
-                <Row label="Status"><select value={t.status} disabled={ro} onChange={(e) => patch({ status: e.target.value })} className={inp} data-testid="task-detail-status">{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select></Row>
+                <Row label="Board">
+                  <Select value={t.board_id || ""} disabled={ro} onValueChange={(val) => patch({ board_id: val }, "Task dipindah ke board lain")}>
+                    <SelectTrigger className="w-full bg-surface2 border-slate-200 dark:border-slate-800 rounded-xl" data-testid="task-detail-board">
+                      <SelectValue placeholder="Pilih board..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {!boards.some((b) => b.id === t.board_id) && t.board && (
+                        <SelectItem key={t.board.id} value={t.board.id}>{t.board.name}</SelectItem>
+                      )}
+                      {boards.map((b) => (
+                        <SelectItem key={b.id} value={b.id} data-testid={`board-option-${b.id}`}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Row>
+                <Row label="Status">
+                  <Select value={t.status} disabled={ro} onValueChange={(val) => patch({ status: val })}>
+                    <SelectTrigger className="w-full bg-surface2 border-slate-200 dark:border-slate-800 rounded-xl" data-testid="task-detail-status">
+                      <SelectValue placeholder="Pilih status..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statuses.map((s) => (
+                        <SelectItem key={s.key} value={s.key} data-testid={`status-option-${s.key}`}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Row>
 
                 {/* Multi Requestor with Auto Reviewer */}
                 <Row label="Requestor">
@@ -225,7 +264,20 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                   </div>
                 </Row>
 
-                <Row label="Assignee"><UserSelect value={t.assignee_id} ids={members} onChange={(v) => patch({ assignee_id: v })} testid="task-detail-assignee" /></Row>
+                <Row label="Assignee">
+                  <MultiUserSelect
+                    value={t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : [])}
+                    ids={members}
+                    onChange={(ids) => {
+                      const nextIds = Array.isArray(ids) ? ids : [];
+                      patch({
+                        assignee_ids: nextIds,
+                        assignee_id: nextIds[0] || null
+                      });
+                    }}
+                    testid="task-detail-assignee"
+                  />
+                </Row>
                 <Row label="Priority"><PrioritySelect value={t.priority} onChange={(v) => patch({ priority: v })} testid="task-detail-priority" /></Row>
                 <Row label="Deadline"><div className="flex items-center gap-2"><input type="datetime-local" disabled={ro} defaultValue={t.deadline ? fmtDate(t.deadline, "yyyy-MM-dd'T'HH:mm") : ""} key={t.deadline} onBlur={(e) => { const v = e.target.value ? new Date(e.target.value).toISOString() : null; if (v !== t.deadline) patch({ deadline: v }); }} className={inp} data-testid="task-detail-deadline" />{d && <span className={`whitespace-nowrap text-xs ${d.cls}`}>{d.state === "overdue" ? "Overdue" : d.state === "today" ? "Due today" : ""}</span>}</div></Row>
                 <Row label="Start date"><input type="date" disabled={ro} defaultValue={t.start_date || ""} key={`s${t.start_date}`} onBlur={(e) => e.target.value !== (t.start_date || "") && patch({ start_date: e.target.value || null })} className={inp} /></Row>
@@ -233,7 +285,19 @@ export default function TaskDetail({ id, onClose, onChanged }) {
                 <Row label="Item"><ItemPicker value={t.item_type} onChange={(v) => patch({ item_type: v })} testid="task-detail-item" /></Row>
                 <Row label="Link file/folder"><input disabled={ro} defaultValue={t.link_url || ""} key={`l${t.link_url}`} onBlur={(e) => e.target.value.trim() !== (t.link_url || "") && patch({ link_url: e.target.value.trim() })} placeholder="https://…" className={inp} data-testid="task-detail-link" /></Row>
                 <Row label="Submit date"><input type="date" disabled={ro} defaultValue={t.submit_date || ""} key={`sd${t.submit_date}`} onChange={(e) => e.target.value !== (t.submit_date || "") && patch({ submit_date: e.target.value || null })} className={inp} data-testid="task-detail-submit-date" /></Row>
-                <Row label="Project"><select value={t.project_id || ""} disabled={ro} onChange={(e) => patch({ project_id: e.target.value || null })} className={inp}><option value="">No project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Row>
+                <Row label="Project">
+                  <Select value={t.project_id || "none"} disabled={ro} onValueChange={(val) => patch({ project_id: val === "none" ? null : val })}>
+                    <SelectTrigger className="w-full bg-surface2 border-slate-200 dark:border-slate-800 rounded-xl" data-testid="task-detail-project">
+                      <SelectValue placeholder="No project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No project</SelectItem>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id} data-testid={`project-option-${p.id}`}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Row>
                 <Row label="Department"><input defaultValue={t.department || ""} disabled={ro} onBlur={(e) => e.target.value !== (t.department || "") && patch({ department: e.target.value })} className={inp} /></Row>
                 <Row label="Card color"><ColorPicker value={t.card_color} onChange={(v) => patch({ card_color: v })} style={t.card_style} onStyle={(v) => patch({ card_style: v })} /></Row>
                 {t.estimate && <Row label="Estimate"><span className="text-sm">{t.estimate}</span></Row>}
@@ -245,10 +309,7 @@ export default function TaskDetail({ id, onClose, onChanged }) {
               </section>
               {t.links?.length > 0 && <section><h4 className="mb-2 text-sm font-bold">Reference links</h4>{t.links.map((l, i) => <a key={`${l}-${i}`} href={l} target="_blank" rel="noreferrer" className="flex items-center gap-2 py-0.5 text-sm text-brand"><Link2 size={13} /><span className="truncate">{l}</span></a>)}</section>}
               <section><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Attachments ({(t.attachments || []).length})</h4>{!ro && <button onClick={pick} className="flex items-center gap-1 text-xs font-semibold text-brand" data-testid="task-detail-add-attachment"><Paperclip size={12} />Add</button>}{input}</div><AttachmentList items={t.attachments || []} onRemove={ro ? null : (a) => setAtt((x) => x.filter((y) => y.id !== a.id))} /></section>
-              <div className="grid gap-5 sm:grid-cols-2">
-                <section><h4 className="mb-1 text-sm font-bold">Checklist</h4><ListEditor items={t.checklist || []} onChange={(v) => patch({ checklist: v })} placeholder="Add item" testid="task-detail-checklist" /></section>
-                <section><h4 className="mb-1 text-sm font-bold">Subtasks ({(t.subtasks || []).filter((s) => s.done).length}/{(t.subtasks || []).length})</h4><ListEditor items={t.subtasks || []} field="title" onChange={(v) => patch({ subtasks: v })} placeholder="Add subtask" testid="task-detail-subtasks" /></section>
-              </div>
+
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => (groups ? setGroups(null) : api.get("/conversations").then((r) => setGroups(r.data.filter((c) => c.type === "group"))))} className="btn-accent flex h-10 items-center gap-1.5 px-4 text-sm font-semibold shadow-sm" data-testid="task-share-btn"><Share2 size={15} />Kirim Preview ke Group</button>
                 {t.conversation_id && <button onClick={() => navigate(`/messages/${t.conversation_id}`)} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="task-open-conversation"><MessageSquare size={14} />Open conversation</button>}

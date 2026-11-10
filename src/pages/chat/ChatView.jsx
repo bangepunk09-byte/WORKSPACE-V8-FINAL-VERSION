@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Phone, Video, Search, PanelRight, BellOff, Bell, X, Pin, FileText, CheckSquare, UserPlus, LogOut, Archive, Trash2, Shield, MapPin } from "lucide-react";
+import { ArrowLeft, Search, PanelRight, BellOff, Bell, X, Pin, FileText, CheckSquare, UserPlus, LogOut, Archive, Trash2, Shield, MapPin, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errMsg, fileUrl } from "../../lib/api";
 import { useApp } from "../../context/AppContext";
-import { useCall } from "../../components/CallLayer";
 import { Avatar, Spinner, fmtDate, GroupIcon } from "../../components/common";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import MessageItem from "./MessageItem";
@@ -83,15 +82,25 @@ const getInitialConv = (cid, me) => {
       }
     }
   } catch {}
+  
+  const isOfficial = cid.startsWith("group_official_");
+  let name = "Conversation";
+  if (isOfficial) {
+    name = cid.replace("group_official_", "");
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
   return {
     id: cid,
-    type: cid.includes("circle") ? "dm" : "dm",
-    name: cid.includes("circle") ? "Circle" : "Conversation",
+    type: isOfficial ? "group" : "dm",
+    name: name,
     member_ids: ["user_circle_assistant", me?.user_id].filter(Boolean),
     admin_ids: [],
-    unread: 0
+    unread: 0,
+    is_verified: isOfficial
   };
 };
+
 
 const getInitialMsgs = (cid) => {
   if (CHAT_CACHE[`msgs_${cid}`]) return CHAT_CACHE[`msgs_${cid}`];
@@ -107,9 +116,9 @@ const getInitialMsgs = (cid) => {
 
 export default function ChatView({ cid, onChange }) {
   const { me, userMap, subscribe, online } = useApp();
-  const { startCall } = useCall();
   const [conv, setConv] = useState(() => getInitialConv(cid, me));
   const [msgs, setMsgs] = useState(() => getInitialMsgs(cid));
+  const [loading, setLoading] = useState(!msgs.length);
   const [more, setMore] = useState(true);
   const [reply, setReply] = useState(null);
   const [typing, setTyping] = useState({});
@@ -132,9 +141,21 @@ export default function ChatView({ cid, onChange }) {
 
   const markRead = () => api.post(`/conversations/${cid}/read`).then(onChange).catch(() => {});
 
+  const join = async () => {
+    try {
+      await api.post(`/groups/${cid}/join`);
+      loadConv();
+      onChange?.();
+      toast.success(`Joined ${conv.name || "group"}`);
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+
   useEffect(() => {
     setConv(getInitialConv(cid, me));
     setMsgs(getInitialMsgs(cid));
+    setLoading(!getInitialMsgs(cid).length);
     loadConv();
     api.get(`/conversations/${cid}/messages`).then((r) => {
       const arr = Array.isArray(r.data) ? r.data : [];
@@ -144,7 +165,7 @@ export default function ChatView({ cid, onChange }) {
       setMore(arr.length >= 50);
       setTimeout(() => bottom.current?.scrollIntoView(), 20);
       markRead();
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [cid]); // eslint-disable-line
 
   useEffect(() => subscribe((e) => {
@@ -196,13 +217,14 @@ export default function ChatView({ cid, onChange }) {
   const activeConv = conv || getInitialConv(cid, me);
   const otherMemberId = (activeConv.member_ids || []).find((x) => x !== me?.user_id) || me?.user_id;
   const other = activeConv.type === "dm" ? (
-    userMap?.[otherMemberId] || (otherMemberId === "user_circle_assistant" ? {
+    userMap?.[otherMemberId] || (otherMemberId === "user_circle_assistant" || (activeConv.name || "").toLowerCase() === "circle" ? {
       user_id: "user_circle_assistant",
-      name: "Circle",
+      name: ws?.assistant_name || "Circle",
       job_title: "Workspace AI Assistant",
-      avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364"
+      avatar: ws?.assistant_avatar || "https://api.dicebear.com/7.x/bottts/svg?seed=CircleWorkspace&backgroundColor=FF5364"
     } : null)
   ) : null;
+
 
   const title = other?.name || activeConv.name || "Circle";
   const typers = Object.entries(typing).filter(([, t]) => Date.now() - t < 4000).map(([id]) => userMap[id]?.name?.split(" ")[0]).filter(Boolean);
@@ -218,17 +240,18 @@ export default function ChatView({ cid, onChange }) {
           <button onClick={() => navigate("/messages")} className="btn-ghost flex h-11 w-11 items-center justify-center lg:hidden" aria-label="Back" data-testid="chat-back-btn"><ArrowLeft size={20} /></button>
           <button onClick={openPanel} className="flex min-w-0 flex-1 items-center gap-3 text-left">
             {other ? <Avatar user={other} size={38} /> : <GroupIcon c={conv} size={40} />}
-            <span className="min-w-0"><span className="block truncate font-bold" data-testid="chat-title">{title}</span>
+            <span className="min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate font-bold" data-testid="chat-title">{title}</span>
+                {conv.is_verified && <ShieldCheck size={14} className="shrink-0 text-blue-500 fill-blue-500/10" />}
+              </div>
               <span className="block truncate text-xs text-sub">{typers.length ? <span className="text-brand" data-testid="typing-indicator">{typers.join(", ")} typing…</span> : other ? (online.has(other.user_id) ? "Online" : other.job_title) : `${(conv.member_ids || []).length} members${conv.archived ? " · Archived" : ""}`}</span></span>
           </button>
-          {conv.is_member !== false && <>
-            <button onClick={() => startCall(cid, "audio")} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Voice call" data-testid="start-voice-call-btn"><Phone size={18} /></button>
-            <button onClick={() => startCall(cid, "video")} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Video call" data-testid="start-video-call-btn"><Video size={19} /></button>
-          </>}
+          {/* Call buttons removed as requested */}
           <button onClick={() => setSearch(search === null ? "" : null)} className="btn-ghost hidden h-11 w-11 items-center justify-center text-sub sm:flex" aria-label="Search in conversation" data-testid="chat-search-toggle"><Search size={18} /></button>
           <button onClick={openPanel} className="btn-ghost flex h-11 w-11 items-center justify-center text-sub" aria-label="Details" data-testid="chat-details-toggle"><PanelRight size={18} /></button>
         </header>
-        {conv.active_call && <div className="flex items-center justify-between bg-soft-green px-4 py-2 text-sm"><span>A call is in progress</span><button onClick={() => startCall(cid, conv.active_call.media)} className="font-semibold text-emerald-700" data-testid="join-active-call-btn">Join</button></div>}
+
         {search !== null && (
           <div className="border-b bg-surface p-3">
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search this conversation…" className="h-10 w-full rounded-xl border bg-surface2 px-3 text-sm outline-none" data-testid="chat-search-input" />
@@ -236,14 +259,18 @@ export default function ChatView({ cid, onChange }) {
           </div>
         )}
         <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 scroll-thin" data-testid="message-list">
-          {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Load older messages</button></div>}
-          {safeMsgs.map((m, i) => {
-            const prev = safeMsgs[i - 1];
-            const grouped = prev && prev.sender_id === m.sender_id && prev.type !== "call" && new Date(m.created_at) - new Date(prev.created_at) < 300000;
-            return <MessageItem key={m.id || i} m={m} mine={m.sender_id === me?.user_id} grouped={grouped} conv={conv} onReply={setReply} onCreateTask={setTaskFrom} readBy={m.id === lastMine ? readers(m.created_at) : undefined} />;
-          })}
-          {!safeMsgs.length && <p className="py-20 text-center text-sm text-sub">Say hello to {title}.</p>}
-          <div ref={bottom} />
+          {loading ? (
+            <div className="flex h-full items-center justify-center"><Spinner label="Messages" /></div>
+          ) : (<>
+            {more && safeMsgs.length > 0 && <div className="text-center"><button onClick={older} className="rounded-full bg-surface2 px-3 py-1 text-xs font-semibold text-sub" data-testid="load-older-btn">Load older messages</button></div>}
+            {safeMsgs.map((m, i) => {
+              const prev = safeMsgs[i - 1];
+              const grouped = prev && prev.sender_id === m.sender_id && prev.type !== "call" && new Date(m.created_at) - new Date(prev.created_at) < 300000;
+              return <MessageItem key={m.id || i} m={m} mine={m.sender_id === me?.user_id} grouped={grouped} conv={conv} onReply={setReply} onCreateTask={setTaskFrom} readBy={m.id === lastMine ? readers(m.created_at) : undefined} />;
+            })}
+            {!safeMsgs.length && <p className="py-20 text-center text-sm text-sub">Say hello to {title}.</p>}
+            <div ref={bottom} />
+          </>)}
         </div>
         {conv.is_member === false ? (
           <div className="border-t bg-surface p-4 text-center"><button onClick={join} className="btn-accent h-11 px-6 font-semibold" data-testid="join-group-btn">Join {conv.name}</button></div>

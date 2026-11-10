@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { MessageCircle, Phone, Video, Mail, MapPin, Briefcase, Users2, Pencil, Calendar, Clock, IdCard, Link2 } from "lucide-react";
+import { MessageCircle, Mail, MapPin, Briefcase, Users2, Pencil, Calendar, Clock, IdCard, Link2, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
-import { useCall } from "../components/CallLayer";
 import { api, errMsg, fileUrl, uploadFile } from "../lib/api";
 import { Avatar, Spinner, StatusBadge, PriorityBadge, Labels, dueInfo, AccentButton, GhostButton } from "../components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
@@ -74,7 +73,6 @@ function EditProfile({ open, onOpenChange, p, onSaved }) {
 export default function Profile() {
   const { uid } = useParams();
   const { me, userMap, ws, statuses, online, reloadUsers } = useApp();
-  const { startCall } = useCall();
   const [p, setP] = useState(null);
   const [edit, setEdit] = useState(false);
   const navigate = useNavigate();
@@ -100,8 +98,6 @@ export default function Profile() {
             <div className="flex flex-wrap gap-2">
               {uid !== me.user_id && <>
                 <AccentButton onClick={async () => navigate(`/messages/${await dmId()}`)} data-testid="profile-message-btn"><MessageCircle size={16} />Message</AccentButton>
-                <GhostButton onClick={async () => startCall(await dmId(), "audio")} aria-label="Voice call" data-testid="profile-call-btn"><Phone size={16} /></GhostButton>
-                <GhostButton onClick={async () => startCall(await dmId(), "video")} aria-label="Video call" data-testid="profile-video-btn"><Video size={16} /></GhostButton>
               </>}
               {p.can_edit && <GhostButton onClick={() => setEdit(true)} data-testid="profile-edit-btn"><Pencil size={15} />Edit</GhostButton>}
             </div>

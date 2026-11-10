@@ -9,6 +9,7 @@ import BackgroundEditor from "./settings/BackgroundEditor";
 import { UserProfileSettings } from "./settings/UserProfileSettings";
 import { Card, AdminOverview, PeopleAccess, WorkspaceBranding, DivisionsAdmin, ItemTypesAdmin, WeeklyReportCard, LabelsAdmin, StatusesAdmin, ProfileFieldsAdmin, StickersAdmin, AssistantBranding } from "./settings/AdminPanels";
 import { DEFAULT_COPYWRITING, generateCopywritingCsv, parseCopywritingCsv } from "../lib/i18n";
+import { playSound } from "../lib/sound";
 
 const CATS = [["messages", "Direct & group messages"], ["mentions", "Mentions"], ["calls", "Calls & missed calls"], ["tasks", "Task assignments, reviews & completion"], ["deadlines", "Upcoming & overdue deadlines"], ["polls", "New polls"], ["groups", "Group invitations"], ["org", "Organization changes"], ["beranda", "Beranda: balasan, like & mention"]];
 
@@ -29,13 +30,107 @@ function Appearance() {
 }
 
 function NotificationPrefs() {
-  const { prefs, savePrefs } = useApp();
+  const { prefs, savePrefs, showTopNotif } = useApp();
   const n = prefs.notifications || {};
+  const [testing, setTesting] = useState(false);
+
+  const triggerTest = async (mode) => {
+    setTesting(true);
+
+    // 1. Instantly render the popup via AppContext with complete actionable data
+    if (mode === "access_request") {
+      const demoId = `req_test_${Date.now()}`;
+      showTopNotif({
+        id: `test_notif_${Date.now()}`,
+        title: "Permintaan Akses Masuk Baru",
+        body: "Jessica Iskandar (Marketing) mengajukan permohonan akses masuk",
+        type: "access_request",
+        category: "system",
+        access_request: {
+          id: demoId,
+          name: "Jessica Iskandar",
+          email: "jessica@asliri.id",
+          department: "Marketing",
+          job_title: "Brand Specialist",
+          status: "pending"
+        }
+      });
+    } else if (mode === "message") {
+      showTopNotif({
+        id: `test_notif_${Date.now()}`,
+        title: "Pesan Baru dari Budi Santoso",
+        body: "Halo! Apakah dokumen spesifikasi proyek sudah siap di-review?",
+        type: "dm",
+        category: "messages",
+        conversation_id: "conv_circle_user_admin1"
+      });
+    } else {
+      showTopNotif({
+        id: `test_notif_${Date.now()}`,
+        title: "Tugas Baru Ditugaskan",
+        body: "Budi Santoso menugaskan 'Review Dokumen Desain' kepadamu.",
+        type: "task_assigned",
+        category: "tasks",
+        task_id: "tsk_init_1"
+      });
+    }
+
+    // 2. Play sound feedback immediately
+    playSound("notification");
+
+    // 3. Persist to server in background
+    try {
+      await api.post("/notifications/test", { mode });
+    } catch (err) {
+      console.warn("Server test notification notification warning:", err);
+    } finally {
+      setTesting(false);
+      toast.success("Popup notifikasi berhasil dimunculkan!");
+    }
+  };
+
   return (
-    <Card title="Notification preferences" testid="notification-prefs">
-      <div className="divide-y">{CATS.map(([k, l]) => <label key={k} className="flex items-center justify-between py-3 text-sm">{l}<Switch checked={n[k] !== false} onCheckedChange={(v) => savePrefs({ notifications: { ...n, [k]: v } })} data-testid={`notif-pref-${k}`} /></label>)}</div>
-      <p className="mt-3 text-xs text-sub">Mute individual groups from the conversation details panel.</p>
-    </Card>
+    <div className="space-y-5">
+      <Card title="Uji Coba Popup Notifikasi (Quick Action)" testid="test-notification-card">
+        <p className="text-xs text-sub mb-3.5">
+          Klik tombol di bawah ini untuk menguji popup notifikasi atas layar beserta tombol Quick Action (Setujui Akses, Balas Chat, Lihat Tugas).
+        </p>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => triggerTest("access_request")}
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors disabled:opacity-50"
+            data-testid="test-notif-access-btn"
+          >
+            🔔 Test Akses Masuk (Approve/Reject)
+          </button>
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => triggerTest("message")}
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-brand px-4 text-xs font-bold text-white shadow-xs hover:bg-brand/90 transition-colors disabled:opacity-50"
+            data-testid="test-notif-msg-btn"
+          >
+            💬 Test Pesan Chat (Quick Reply)
+          </button>
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => triggerTest("task")}
+            className="flex h-10 items-center gap-1.5 rounded-xl border bg-surface2 px-4 text-xs font-bold text-ink hover:bg-surface transition-colors shadow-2xs disabled:opacity-50"
+            data-testid="test-notif-task-btn"
+          >
+            📋 Test Penugasan Tugas
+          </button>
+        </div>
+      </Card>
+
+      <Card title="Notification preferences" testid="notification-prefs">
+        <div className="divide-y">{CATS.map(([k, l]) => <label key={k} className="flex items-center justify-between py-3 text-sm">{l}<Switch checked={n[k] !== false} onCheckedChange={(v) => savePrefs({ notifications: { ...n, [k]: v } })} data-testid={`notif-pref-${k}`} /></label>)}</div>
+        <p className="mt-3 text-xs text-sub">Mute individual groups from the conversation details panel.</p>
+      </Card>
+    </div>
   );
 }
 

@@ -20,8 +20,9 @@ export const SAVED_VIEWS = [["all", "All Tasks"], ["active", "Active"], ["my", "
 const VIEWS = [["board", "Board", KanbanSquare], ["list", "List", List], ["timeline", "Timeline", GanttChart], ["calendar", "Calendar", CalendarDays]];
 const sel = "h-10 rounded-full border bg-surface text-sm font-medium text-ink shadow-sm transition-all hover:bg-surface2 focus:ring-2 focus:ring-brand/20 outline-none cursor-pointer";
 
-const INITIAL_TASKS = [];
-const DEFAULT_BOARDS = [{ id: "brd_1", name: "Main Board", color: "#2F7DE1", task_count: 0 }];
+import { INITIAL_TASKS } from "../data/initialTasks";
+
+const DEFAULT_BOARDS = [{ id: "brd_1", name: "Main Board", color: "#2F7DE1", task_count: 28 }];
 
 export const PRIMARY_SAVED_VIEWS = [
   ["all", "All Tasks"],
@@ -94,7 +95,10 @@ export function parseCSV(text) {
       else if (["description", "deskripsi", "desc"].includes(header)) item.description = val;
       else if (["status"].includes(header)) item.status = val.toLowerCase().replace(/\s+/g, "_");
       else if (["priority", "prioritas"].includes(header)) item.priority = val.toLowerCase();
-      else if (["assignee", "assignee_id", "petugas"].includes(header)) item.assignee_id = val;
+      else if (["assignee", "assignee_id", "petugas", "assignees"].includes(header)) {
+        item.assignee_id = val.split(";")[0]?.trim() || val.split(",")[0]?.trim() || val;
+        item.assignee_ids = val.split(/[;,]/).map((x) => x.trim()).filter(Boolean);
+      }
       else if (["deadline", "tenggat", "due_date"].includes(header)) item.deadline = val;
       else if (["department", "divisi"].includes(header)) item.department = val;
       else if (["number", "number_str"].includes(header)) item.number_str = val;
@@ -149,6 +153,7 @@ export function TaskWorkspace({ projectId, compactHeader }) {
     } catch {}
     return INITIAL_TASKS;
   });
+  const [loading, setLoading] = useState(!tasks.length);
   const jsonInputRef = useRef(null);
   const csvInputRef = useRef(null);
 
@@ -213,18 +218,33 @@ export function TaskWorkspace({ projectId, compactHeader }) {
   useEffect(() => subscribe((e) => e.type === "tasks:changed" && loadBoards()), [subscribe, loadBoards]);
   const pickBoard = (id) => { setBoardId(id); setSelected([]); if (id) params.set("board", id); else params.delete("board"); setParams(params); };
   const newTask = (extra = {}) => (boards?.length ? setCreate({ board_id: boardId, ...extra }) : toast.error("Kamu belum diundang ke board mana pun"));
-  const load = useCallback(() => api.get("/tasks", { params: query() }).then((r) => {
-    if (Array.isArray(r.data)) {
-      setTasks(r.data);
-      if (!Object.values(f).some(Boolean) && saved === "all" && !boardId && !projectId) {
-        GLOBAL_TASKS_CACHE = r.data;
-        try { localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data)); } catch {}
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    return api.get("/tasks", { params: query() }).then((r) => {
+      if (Array.isArray(r.data)) {
+        setTasks(r.data);
+        if (!Object.values(f).some(Boolean) && saved === "all" && !boardId && !projectId) {
+          GLOBAL_TASKS_CACHE = r.data;
+          try { localStorage.setItem("circle_tasks_cache", JSON.stringify(r.data)); } catch {}
+        }
       }
-    }
-  }).catch(() => {}), [query, f, saved, boardId, projectId]);
+    }).catch(() => {}).finally(() => {
+      if (!silent) setLoading(false);
+    });
+  }, [query, f, saved, boardId, projectId]);
+
+  const updateTaskLocally = useCallback((taskId, patch) => {
+    setTasks((prev) => {
+      const next = prev.map((t) => t.id === taskId ? { ...t, ...patch } : t);
+      GLOBAL_TASKS_CACHE = next;
+      try { localStorage.setItem("circle_tasks_cache", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get("/projects").then((r) => setProjects(Object.fromEntries(r.data.map((p) => [p.id, p])))); }, []);
-  useEffect(() => subscribe((e) => e.type === "tasks:changed" && load()), [subscribe, load]);
+  useEffect(() => subscribe((e) => e.type === "tasks:changed" && load(true)), [subscribe, load]);
   const open = (id) => { params.set("task", id); setParams(params); };
   const close = () => { params.delete("task"); setParams(params); };
   const switchView = (v) => {
@@ -518,15 +538,17 @@ export function TaskWorkspace({ projectId, compactHeader }) {
           <span className="px-2 text-sm font-semibold">{selected.length} selected</span>
           <select onChange={(e) => e.target.value && bulk({ status: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid="bulk-status"><option value="">Set status…</option>{statuses.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}</select>
           <select onChange={(e) => e.target.value && bulk({ priority: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid="bulk-priority"><option value="">Set priority…</option>{Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.name}</option>)}</select>
-          <select onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid="bulk-assignee"><option value="">Assign to…</option>{users.map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>
+          <select onChange={(e) => e.target.value && bulk({ assignee_id: e.target.value })} value="" className="h-9 rounded-full border bg-surface2 px-3 text-sm" data-testid={`bulk-assignee`}><option value="">Assign to…</option>{users.map((u) => <option key={u.user_id} value={u.user_id}>{u.name}</option>)}</select>
           <button onClick={() => bulk({ archived: saved !== "archived" })} className="h-9 rounded-full border px-3 text-sm font-medium" data-testid="bulk-archive">{saved === "archived" ? "Unarchive" : "Archive"}</button>
           <button onClick={() => exp("csv", selected)} className="h-9 rounded-full border px-3 text-sm font-medium" data-testid="bulk-export">Export</button>
           <button onClick={() => setSelected([])} className="ml-auto text-sub" aria-label="Clear selection"><X size={16} /></button>
         </div>
       )}
         <div key={view === "archive" || saved === "archived" ? "archive" : view} className="min-h-[350px]">
-          {(view === "archive" || saved === "archived") ? <ArchiveView tasks={tasks} onOpen={open} reload={load} projects={projects} />
-          : view === "board" ? <Board tasks={tasks} onOpen={open} onNew={(status) => newTask({ status })} reload={load} />
+          {loading ? (
+            <div className="flex py-20 items-center justify-center"><Spinner label="Tasks" /></div>
+          ) : (view === "archive" || saved === "archived") ? <ArchiveView tasks={tasks} onOpen={open} reload={load} projects={projects} />
+          : view === "board" ? <Board tasks={tasks} onOpen={open} onNew={(status) => newTask({ status })} reload={load} onMoveTask={updateTaskLocally} />
           : view === "list" ? <ListView tasks={tasks} projects={projects} onOpen={open} selected={selected} setSelected={setSelected} reload={load} groupBy={groupBy} boardId={boardId} />
           : view === "timeline" ? <Timeline tasks={tasks} onOpen={open} /> : <Calendar tasks={tasks} onOpen={open} />}
         </div>

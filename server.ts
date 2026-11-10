@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import fs from 'fs';
+import { INITIAL_TASKS } from './src/data/initialTasks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +22,34 @@ async function startServer() {
         client.send(msg);
       }
     });
+  };
+
+  const createNotification = (params: { 
+    user_id: string, 
+    title: string, 
+    body?: string, 
+    type?: string, 
+    category?: string, 
+    actor_id?: string,
+    link?: string,
+    access_request?: any,
+    task_id?: string,
+    conversation_id?: string
+  }) => {
+    const notif = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      read: false,
+      created_at: new Date().toISOString(),
+      category: params.category || "general",
+      ...params
+    };
+    if (!db.notifications) db.notifications = [];
+    db.notifications.unshift(notif);
+    // Keep only last 100 notifications per user or overall
+    if (db.notifications.length > 1000) db.notifications = db.notifications.slice(0, 1000);
+    
+    broadcast({ type: "notification", data: notif });
+    return notif;
   };
 
   const upload = multer({
@@ -64,8 +93,13 @@ async function startServer() {
       }
     ],
     labels: [
-      { id: "lbl_1", name: "High Priority", color: "#FF5364", description: "Urgent items" },
-      { id: "lbl_2", name: "Feature", color: "#2F7DE1", description: "New features" }
+      { id: "lbl_asliri", name: "ASLI RI", color: "#EF4444", description: "IP / Brand ASLI RI" },
+      { id: "lbl_tixfly", name: "TIXFLY", color: "#8B5CF6", description: "IP / Brand TIXFLY" },
+      { id: "lbl_bankabdi", name: "BANK ABDI", color: "#0EA5E9", description: "IP / Brand BANK ABDI" },
+      { id: "lbl_tommy", name: "TOMMY FONDY", color: "#F97316", description: "IP / Brand TOMMY FONDY" },
+      { id: "lbl_trinity", name: "TRINITY", color: "#EC4899", description: "IP / Brand TRINITY" },
+      { id: "lbl_beezy", name: "BEEZY", color: "#EAB308", description: "IP / Brand BEEZY" },
+      { id: "lbl_internal", name: "INTERNAL", color: "#1E293B", description: "IP / Brand INTERNAL" }
     ],
     notifications: [],
     tasks: [],
@@ -208,6 +242,30 @@ async function startServer() {
     }
   });
 
+  // Ensure Super Admin user saeful@asliri.id exists
+  let saefulAdmin = db.users.find((u: any) => u.email?.toLowerCase() === "saeful@asliri.id");
+  if (!saefulAdmin) {
+    saefulAdmin = {
+      user_id: "user_superadmin_saeful",
+      email: "saeful@asliri.id",
+      password: "AsliRi2026!",
+      name: "Saeful",
+      role: "super_admin",
+      job_title: "Super Administrator",
+      department: "Management",
+      online: true,
+      is_demo: false,
+      status: "active",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
+      picture: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80"
+    };
+    db.users.push(saefulAdmin);
+  } else {
+    saefulAdmin.role = "super_admin";
+    saefulAdmin.status = "active";
+    if (!saefulAdmin.password) saefulAdmin.password = "AsliRi2026!";
+  }
+
   // Ensure default boards have department and member_ids
   if (Array.isArray(db.boards)) {
     db.boards.forEach((b: any) => {
@@ -215,6 +273,311 @@ async function startServer() {
       if (!Array.isArray(b.member_ids)) b.member_ids = [];
     });
   }
+
+  // Helper for color contrast
+  function isDarkColor(hex: string): boolean {
+    if (!hex || typeof hex !== 'string') return false;
+    const c = hex.replace('#', '');
+    if (c.length !== 6) return false;
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance < 0.55;
+  }
+
+  // 16 Standard Item Types from user requirements
+  const DEFAULT_WORKSPACE_ITEM_TYPES = [
+    { name: "Article Asset", color: "#FFE4E6", text_color: "#BE123C", border_color: "#FECDD3" },
+    { name: "Article Copywriting", color: "#FFEDD5", text_color: "#C2410C", border_color: "#FED7AA" },
+    { name: "SocMed Asset", color: "#FEF08A", text_color: "#854D0E", border_color: "#FDE047" },
+    { name: "SocMed Copywriting", color: "#DCFCE7", text_color: "#15803D", border_color: "#BBF7D0" },
+    { name: "Video Storyline", color: "#BAE6FD", text_color: "#0369A1", border_color: "#7DD3FC" },
+    { name: "Video Storyboard", color: "#CCFBF1", text_color: "#0F766E", border_color: "#99F6E4" },
+    { name: "Video Editing", color: "#F3E8FF", text_color: "#7E22CE", border_color: "#E9D5FF" },
+    { name: "Deck Copywriting", color: "#2563EB", text_color: "#FFFFFF", border_color: "#1D4ED8" },
+    { name: "Deck Asset", color: "#DDD6FE", text_color: "#4C1D95", border_color: "#C4B5FD" },
+    { name: "Documentation", color: "#F1F5F9", text_color: "#334155", border_color: "#CBD5E1" },
+    { name: "Leads", color: "#94A3B8", text_color: "#0F172A", border_color: "#64748B" },
+    { name: "UI/UX", color: "#581C87", text_color: "#FFFFFF", border_color: "#3B0764" },
+    { name: "Shooting", color: "#047857", text_color: "#FFFFFF", border_color: "#065F46" },
+    { name: "Video Motion", color: "#78350F", text_color: "#FFFFFF", border_color: "#451A03" },
+    { name: "Request HR", color: "#6B21A8", text_color: "#FFFFFF", border_color: "#581C87" },
+    { name: "Other", color: "#E2E8F0", text_color: "#1E293B", border_color: "#CBD5E1" }
+  ];
+
+  if (!db.workspace) db.workspace = {};
+  if (!Array.isArray(db.workspace.item_types) || db.workspace.item_types.length === 0) {
+    db.workspace.item_types = [...DEFAULT_WORKSPACE_ITEM_TYPES];
+  } else {
+    DEFAULT_WORKSPACE_ITEM_TYPES.forEach((def) => {
+      const found = db.workspace.item_types.find((x: any) => x.name.toLowerCase() === def.name.toLowerCase());
+      if (!found) {
+        db.workspace.item_types.push(def);
+      } else {
+        if (!found.text_color) found.text_color = def.text_color;
+        if (!found.border_color) found.border_color = def.border_color;
+      }
+    });
+  }
+
+  // Ensure default IP/Brand labels exist
+  const DEFAULT_LABELS = [
+    { id: "lbl_asliri", name: "ASLI RI", color: "#EF4444", description: "IP / Brand ASLI RI" },
+    { id: "lbl_tixfly", name: "TIXFLY", color: "#8B5CF6", description: "IP / Brand TIXFLY" },
+    { id: "lbl_bankabdi", name: "BANK ABDI", color: "#0EA5E9", description: "IP / Brand BANK ABDI" },
+    { id: "lbl_tommy", name: "TOMMY FONDY", color: "#F97316", description: "IP / Brand TOMMY FONDY" },
+    { id: "lbl_trinity", name: "TRINITY", color: "#EC4899", description: "IP / Brand TRINITY" },
+    { id: "lbl_beezy", name: "BEEZY", color: "#EAB308", description: "IP / Brand BEEZY" },
+    { id: "lbl_internal", name: "INTERNAL", color: "#1E293B", description: "IP / Brand INTERNAL" }
+  ];
+
+  if (!Array.isArray(db.labels)) {
+    db.labels = [...DEFAULT_LABELS];
+  } else {
+    DEFAULT_LABELS.forEach((dl) => {
+      const found = db.labels.find((l: any) => l.name.toLowerCase() === dl.name.toLowerCase() || l.id === dl.id);
+      if (!found) {
+        db.labels.push(dl);
+      } else {
+        if (!found.color) found.color = dl.color;
+      }
+    });
+  }
+
+  // Ensure official department groups exist
+  const officialGroups = [
+    { name: "Marketing", description: "Official channel for Marketing department discussions" },
+    { name: "Sales", description: "Official channel for Sales department discussions" },
+    { name: "IT", description: "Official channel for IT department discussions" },
+    { name: "Finance", description: "Official channel for Finance department discussions" },
+    { name: "Legal", description: "Official channel for Legal department discussions" },
+    { name: "HRGA", description: "Official channel for HRGA department discussions" },
+  ];
+
+  officialGroups.forEach((og) => {
+    const groupId = `group_official_${og.name.toLowerCase()}`;
+    let g = db.groups.find((x: any) => x.id === groupId || (x.name === og.name && x.is_verified));
+    
+    if (g) {
+      g.id = groupId;
+      g.name = og.name;
+      g.is_verified = true;
+      g.type = "group";
+    } else {
+      g = {
+        id: groupId,
+        name: og.name,
+        description: og.description,
+        group_type: "department",
+        is_verified: true,
+        created_at: new Date().toISOString(),
+        member_ids: db.users.map((u: any) => u.user_id),
+        type: "group"
+      };
+      db.groups.push(g);
+    }
+
+    const convIdx = db.conversations.findIndex((c: any) => c.id === g.id || (c.name === og.name && c.is_verified));
+    if (convIdx === -1) {
+      db.conversations.push(g);
+    } else {
+      const c = db.conversations[convIdx];
+      c.id = g.id;
+      c.name = g.name;
+      c.is_verified = true;
+      c.type = "group";
+      if (!Array.isArray(c.member_ids)) c.member_ids = g.member_ids;
+    }
+  });
+
+  // Ensure default posts exist so Beranda has active trending hashtags and feed content
+  if (!Array.isArray(db.posts) || db.posts.length === 0) {
+    const nowIso = new Date().toISOString();
+    const h1 = new Date(Date.now() - 3600000 * 2).toISOString();
+    const h2 = new Date(Date.now() - 3600000 * 5).toISOString();
+    const d1 = new Date(Date.now() - 86400000 * 1).toISOString();
+    db.posts = [
+      {
+        id: "pst_init_1",
+        author_id: "user_admin1",
+        text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
+        attachments: [],
+        likes: ["user_budi", "user_siti", "user_dian"],
+        like_count: 3,
+        liked: true,
+        reactions: { "🎉": ["user_budi", "user_siti"], "👍": ["user_admin1"] },
+        reply_count: 1,
+        replies_preview: [
+          {
+            id: "pst_init_1_rep_1",
+            author_id: "user_budi",
+            parent_id: "pst_init_1",
+            text: "Mantap! Tim Product siap kolaborasi bareng divisi Engineering dan Design 🚀 #project #sprint",
+            likes: [],
+            like_count: 0,
+            reactions: {},
+            created_at: h1
+          }
+        ],
+        created_at: h2
+      },
+      {
+        id: "pst_init_2",
+        author_id: "user_siti",
+        text: "Sprint Engineering minggu ini fokus pada integrasi sistem dan kestabilan performa. Rekan-rekan bisa cek board tugas masing-masing yaa 💻 #engineering #sprint #performance",
+        attachments: [],
+        likes: ["user_admin1", "user_dian"],
+        like_count: 2,
+        liked: false,
+        reactions: { "🔥": ["user_admin1", "user_dian"] },
+        reply_count: 0,
+        replies_preview: [],
+        created_at: d1
+      },
+      {
+        id: "pst_init_3",
+        author_id: "user_dian",
+        text: "Design system dan UI components versi 2.0 sudah diperbarui di Figma. Silakan cek guideline warna dan tipografi terbaru 🎨 #design #uiux",
+        attachments: [],
+        likes: ["user_budi"],
+        like_count: 1,
+        liked: false,
+        reactions: { "❤️": ["user_budi"] },
+        reply_count: 0,
+        replies_preview: [],
+        created_at: nowIso
+      }
+    ];
+  }
+
+  // Ensure default tasks exist if empty
+  if (!Array.isArray(db.tasks) || db.tasks.length === 0) {
+    if (Array.isArray(INITIAL_TASKS) && INITIAL_TASKS.length > 0) {
+      db.tasks = JSON.parse(JSON.stringify(INITIAL_TASKS));
+    } else {
+      db.tasks = [
+        {
+          id: "tsk_init_1",
+          number_str: "TSK-001",
+          title: "Setup Google Workspace Integration (Calendar & Drive)",
+          description: "Connect Google Auth, Google Calendar events sync, and Google Drive file picker.",
+          status: "in_progress",
+          priority: "high",
+          assignee_id: "user_admin1",
+          project_id: "prj_1",
+          board_id: "brd_1",
+          label_ids: ["lbl_1", "lbl_2"],
+          deadline: new Date(Date.now() + 86400000 * 3).toISOString(),
+          created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+          updated_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+          comments: [],
+          checkpoints: [
+            { id: "c1", title: "OAuth Setup", done: true },
+            { id: "c2", title: "Calendar Sync", done: false }
+          ],
+          progress: 50,
+          archived: false,
+          requestor_ids: ["user_admin1"],
+          collaborator_ids: ["user_budi"]
+        }
+      ];
+    }
+  }
+
+  // Ensure default project exists if empty
+  if (!Array.isArray(db.projects) || db.projects.length === 0) {
+    db.projects = [
+      {
+        id: "prj_1",
+        name: "Enterprise Workspace Migration",
+        description: "Migrasi sistem kolaborasi internal ASLI RI ke platform terpadu.",
+        status: "active",
+        progress: 60,
+        owner_id: "user_admin1",
+        member_ids: ["user_admin1", "user_budi", "user_siti", "user_dian"],
+        label_ids: ["lbl_1", "lbl_2"]
+      }
+    ];
+  }
+
+  // Ensure default meetings exist if empty
+  if (!Array.isArray(db.meetings) || db.meetings.length === 0) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const dayAfterStr = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10);
+    db.meetings = [
+      {
+        id: "mtg_seed_1",
+        title: "Sprint Planning & Backlog Review",
+        description: "Review sprint backlog, prioritasi tiket, dan pembagian tugas antar divisi.",
+        date: todayStr,
+        start_time: "10:00",
+        end_time: "11:30",
+        location: "Google Meet",
+        meet_link: "https://meet.google.com/asli-sprint-sync",
+        attendee_ids: ["user_admin1", "user_budi", "user_siti", "user_dian"],
+        gcal_synced: false,
+        created_by: "user_admin1",
+        created_at: new Date(Date.now() - 86400000).toISOString()
+      },
+      {
+        id: "mtg_seed_2",
+        title: "Daily Standup Engineering & Product",
+        description: "Sinkronisasi progress harian, blockers, dan update implementasi API.",
+        date: tomorrowStr,
+        start_time: "09:30",
+        end_time: "10:00",
+        location: "Google Meet",
+        meet_link: "https://meet.google.com/asli-daily-standup",
+        attendee_ids: ["user_admin1", "user_budi", "user_siti"],
+        gcal_synced: false,
+        created_by: "user_budi",
+        created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+      },
+      {
+        id: "mtg_seed_3",
+        title: "Design System & UI Review Session",
+        description: "Evaluasi token warna, komponen drag-and-drop, dan konsistensi mobile viewport.",
+        date: dayAfterStr,
+        start_time: "14:00",
+        end_time: "15:00",
+        location: "Meeting Room A / Google Meet",
+        meet_link: "https://meet.google.com/asli-design-sync",
+        attendee_ids: ["user_admin1", "user_dian", "user_siti"],
+        gcal_synced: false,
+        created_by: "user_dian",
+        created_at: new Date(Date.now() - 3600000 * 12).toISOString()
+      }
+    ];
+  }
+
+  // Ensure default org units and member mappings exist if empty
+  if (!Array.isArray(db.org_units) || db.org_units.length === 0) {
+    db.org_units = [
+      { id: "unit_exec", name: "Board of Directors & Management", level: "Executive", head_id: "user_superadmin_saeful", parent_id: null },
+      { id: "unit_eng", name: "Engineering & IT", level: "Department", head_id: "user_siti", parent_id: "unit_exec" },
+      { id: "unit_prod", name: "Product & Design", level: "Department", head_id: "user_budi", parent_id: "unit_exec" },
+      { id: "unit_ops", name: "Operations & Infrastructure", level: "Department", head_id: "user_admin1", parent_id: "unit_exec" },
+      { id: "unit_mkt", name: "Marketing & Growth", level: "Department", head_id: null, parent_id: "unit_exec" }
+    ];
+
+    const mapping: Record<string, { unit: string, manager?: string }> = {
+      "user_superadmin_saeful": { unit: "unit_exec" },
+      "user_admin1": { unit: "unit_ops", manager: "user_superadmin_saeful" },
+      "user_siti": { unit: "unit_eng", manager: "user_superadmin_saeful" },
+      "user_budi": { unit: "unit_prod", manager: "user_superadmin_saeful" },
+      "user_dian": { unit: "unit_prod", manager: "user_budi" }
+    };
+    (db.users || []).forEach((u: any) => {
+      if (mapping[u.user_id]) {
+        u.org_unit_id = mapping[u.user_id].unit;
+        if (mapping[u.user_id].manager) u.manager_id = mapping[u.user_id].manager;
+      }
+    });
+  }
+
+  saveDbToFile();
 
   // Auto-save DB on any data-modifying HTTP request
   app.use((req, res, next) => {
@@ -259,6 +622,183 @@ async function startServer() {
     });
   });
 
+  // Email & Password Login
+  app.post("/api/auth/login", (req, res) => {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ detail: "Email dan password wajib diisi." });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = db.users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+
+    if (!user) {
+      return res.status(401).json({ detail: "Akun dengan email tersebut belum terdaftar. Silakan lakukan pendaftaran terlebih dahulu." });
+    }
+
+    if (user.password && user.password !== password) {
+      return res.status(401).json({ detail: "Password yang Anda masukkan salah. Silakan periksa kembali." });
+    }
+
+    if (user.status === "pending") {
+      return res.status(403).json({
+        status: "pending",
+        detail: "Akun Anda sedang dalam proses peninjauan & approval oleh Super Admin. Mohon tunggu persetujuan."
+      });
+    }
+
+    if (user.status === "inactive" || user.status === "rejected") {
+      return res.status(403).json({
+        status: "inactive",
+        detail: "Akun Anda dinonaktifkan atau ditolak. Silakan hubungi Super Admin."
+      });
+    }
+
+    currentSessionUser = user;
+    db.session_user_id = user.user_id;
+    saveDbToFile();
+
+    res.json({
+      user,
+      workspace: db.workspace,
+      prefs: db.prefs[user.user_id] || { theme_mode: "light" }
+    });
+  });
+
+  // Email & Password Registration / Signup
+  app.post("/api/auth/register", (req, res) => {
+    const { name, email, password, department, job_title, note, avatar } = req.body || {};
+    if (!email || !password || !name) {
+      return res.status(400).json({ detail: "Nama lengkap, email, dan password wajib diisi." });
+    }
+
+    if (password.length < 4) {
+      return res.status(400).json({ detail: "Password minimal 4 karakter." });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const existingUser = db.users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+
+    if (existingUser && existingUser.status === "active") {
+      return res.status(400).json({ detail: "Email ini sudah memiliki akun aktif. Silakan langsung masuk (login)." });
+    }
+
+    if (existingUser && existingUser.status === "pending") {
+      return res.status(400).json({ detail: "Pendaftaran untuk email ini sudah diajukan dan sedang menunggu approval Super Admin." });
+    }
+
+    const reqId = `req_${Date.now()}`;
+    const newUserId = existingUser ? existingUser.user_id : `user_${Date.now()}`;
+
+    let newUserObj: any = null;
+    const defaultAvatar = avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+    if (!existingUser) {
+      newUserObj = {
+        user_id: newUserId,
+        email: cleanEmail,
+        password: password,
+        name: name.trim(),
+        role: "employee",
+        job_title: job_title || "Staff Member",
+        department: department || "General",
+        status: "pending",
+        online: false,
+        is_demo: false,
+        avatar: defaultAvatar,
+        picture: defaultAvatar
+      };
+      db.users.push(newUserObj);
+    } else {
+      existingUser.password = password;
+      existingUser.name = name.trim();
+      if (department) existingUser.department = department;
+      if (job_title) existingUser.job_title = job_title;
+      existingUser.avatar = defaultAvatar;
+      existingUser.picture = defaultAvatar;
+      existingUser.status = "pending";
+      newUserObj = existingUser;
+    }
+
+    const accessReq = {
+      id: reqId,
+      name: name.trim(),
+      email: cleanEmail,
+      department: department || "General",
+      job_title: job_title || "Staff Member",
+      note: note || "Pendaftaran akun baru via Email & Password",
+      status: "pending",
+      created_at: new Date().toISOString()
+    };
+    db.access_requests.unshift(accessReq);
+
+    // Notify Super Admins / Managers
+    const approvers = db.users.filter((u: any) => 
+      u.role === "super_admin" || 
+      u.role === "workspace_admin" || 
+      (u.role === "department_manager" && (!department || u.department === department || u.department === "General"))
+    );
+    const targetApprovers = approvers.length > 0 ? approvers : [db.users[0]];
+
+    targetApprovers.forEach((admin: any) => {
+      let conv = db.conversations.find((c: any) => 
+        c.type === "dm" && 
+        (c.member_ids || []).includes(CIRCLE_BOT_ID) && 
+        (c.member_ids || []).includes(admin.user_id)
+      );
+
+      if (!conv) {
+        conv = {
+          id: `conv_circle_${admin.user_id}`,
+          type: "dm",
+          name: "Circle (Workspace Assistant)",
+          admin_ids: [],
+          members: [CIRCLE_BOT_ID, admin.user_id],
+          member_ids: [CIRCLE_BOT_ID, admin.user_id],
+          unread: 1,
+          last_message_preview: `Pendaftaran akun baru dari ${name}`,
+          last_message_at: new Date().toISOString()
+        };
+        db.conversations.unshift(conv);
+      } else {
+        conv.unread = (conv.unread || 0) + 1;
+        conv.last_message_preview = `Pendaftaran akun baru dari ${name}`;
+        conv.last_message_at = new Date().toISOString();
+      }
+
+      const msg = {
+        id: `msg_req_${reqId}_${admin.user_id}`,
+        conversation_id: conv.id,
+        sender_id: CIRCLE_BOT_ID,
+        user_id: CIRCLE_BOT_ID,
+        text: `Halo ${admin.name.split(' ')[0]}! Ada pendaftaran akun baru (${cleanEmail}) untuk divisi ${department || 'General'}. Silakan tinjau card approval di bawah ini:`,
+        type: "access_request_card",
+        access_request: accessReq,
+        created_at: new Date().toISOString()
+      };
+      db.messages.push(msg);
+      broadcast({ type: "message:new", data: msg });
+
+      createNotification({
+        user_id: admin.user_id,
+        title: "Pendaftaran Akun Baru",
+        body: `${name} (${cleanEmail}) mendaftar akun baru dan menunggu persetujuan Super Admin`,
+        type: "access_request",
+        category: "system",
+        access_request: accessReq
+      });
+    });
+
+    saveDbToFile();
+    broadcast({ type: "access_requests:changed" });
+    broadcast({ type: "conversations:changed" });
+
+    res.json({
+      success: true,
+      status: "pending",
+      detail: "Pendaftaran berhasil! Akun Anda sedang dalam proses peninjauan & approval oleh Super Admin."
+    });
+  });
+
   app.post("/api/auth/google", (req, res) => {
     const { email, name, picture } = req.body || {};
     if (!email) return res.status(400).json({ detail: "Email is required" });
@@ -266,7 +806,7 @@ async function startServer() {
     let user = db.users.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
 
     // Super admin default email whitelist
-    const isSuperAdminEmail = email.toLowerCase() === "be.creativestudio21@gmail.com" || email.toLowerCase() === "admin@asliri.local";
+    const isSuperAdminEmail = email.toLowerCase() === "be.creativestudio21@gmail.com" || email.toLowerCase() === "admin@asliri.local" || email.toLowerCase() === "saeful@asliri.id";
 
     if (!user) {
       if (isSuperAdminEmail) {
@@ -412,16 +952,14 @@ async function startServer() {
       db.messages.push(msg);
       broadcast({ type: "message:new", data: msg });
 
-      db.notifications.push({
-        id: `notif_${Date.now()}_${admin.user_id}`,
+      createNotification({
         user_id: admin.user_id,
         title: "Permintaan Akses Masuk Baru",
         body: `${name} (${department || 'General'}) mengajukan permohonan akses masuk`,
         type: "access_request",
-        read: false,
-        created_at: new Date().toISOString()
+        category: "system",
+        access_request: accessReq
       });
-      broadcast({ type: "notification:new" });
     });
 
     saveDbToFile();
@@ -488,6 +1026,15 @@ async function startServer() {
     saveDbToFile();
     broadcast({ type: "access_requests:changed" });
     broadcast({ type: "users:changed" });
+
+    // Notify user of approval
+    createNotification({
+      user_id: user.user_id,
+      title: "Selamat! Akses Kamu Telah Disetujui",
+      body: `Permohonan akses kamu ke CIRCLE Workspace telah disetujui oleh Super Admin.`,
+      type: "access_approved",
+      category: "system"
+    });
 
     res.json({ success: true, user, access_request: accessReq });
   });
@@ -652,7 +1199,78 @@ async function startServer() {
   });
 
   app.get("/api/notifications", (req, res) => {
-    res.json({ notifications: db.notifications, unread: db.notifications.filter((n: any) => !n.read).length });
+    const list = db.notifications || [];
+    const myNotifs = list.filter((n: any) => n.user_id === currentSessionUser?.user_id);
+    res.json({ 
+      items: myNotifs, 
+      unread: myNotifs.filter((n: any) => !n.read).length 
+    });
+  });
+
+  app.post("/api/notifications/:id/read", (req, res) => {
+    const n = (db.notifications || []).find((x: any) => x.id === req.params.id);
+    if (n) n.read = true;
+    res.json({ success: true });
+  });
+
+  app.post("/api/notifications/read-all", (req, res) => {
+    (db.notifications || []).forEach((n: any) => {
+      if (n.user_id === currentSessionUser?.user_id) n.read = true;
+    });
+    res.json({ success: true });
+  });
+
+  app.post("/api/notifications/test", (req, res) => {
+    const userId = currentSessionUser?.user_id || "user_admin1";
+    const mode = req.body?.mode || "access_request"; // access_request, message, task
+
+    let notif: any;
+    if (mode === "access_request") {
+      const demoReq = {
+        id: `req_test_${Date.now()}`,
+        name: "Jessica Iskandar",
+        email: "jessica@asliri.id",
+        department: "Marketing",
+        job_title: "Brand Specialist",
+        note: "Permohonan akses internal divisi Marketing untuk monitoring campaign.",
+        status: "pending",
+        created_at: new Date().toISOString()
+      };
+      if (!Array.isArray(db.access_requests)) db.access_requests = [];
+      db.access_requests.unshift(demoReq);
+
+      notif = createNotification({
+        user_id: userId,
+        title: "Permintaan Akses Masuk Baru",
+        body: `${demoReq.name} (${demoReq.department}) mengajukan permohonan akses masuk`,
+        type: "access_request",
+        category: "system",
+        access_request: demoReq
+      });
+    } else if (mode === "message") {
+      notif = createNotification({
+        user_id: userId,
+        title: "Pesan Baru dari Budi Santoso",
+        body: "Halo! Apakah dokumen spesifikasi proyek sudah siap di-review?",
+        type: "dm",
+        category: "messages",
+        conversation_id: "conv_circle_user_admin1",
+        actor_id: "user_budi"
+      });
+    } else {
+      notif = createNotification({
+        user_id: userId,
+        title: "Tugas Baru Ditugaskan",
+        body: "Budi menugaskan 'Review Dokumen Desain UI/UX' kepadamu.",
+        type: "task_assigned",
+        category: "tasks",
+        task_id: "tsk_init_1",
+        actor_id: "user_budi"
+      });
+    }
+
+    saveDbToFile();
+    res.json({ success: true, notif });
   });
 
   // Auto-Archive Function: Kartu yang berstatus 'done' langsung di-auto-archive tiap minggu jam 23.00 WIB
@@ -695,14 +1313,20 @@ async function startServer() {
 
     const isArchiveView = view === "archived" || archived === "true";
 
+    const isTaskAssignedToUser = (t: any, uid: string) => {
+      if (!uid) return false;
+      if (Array.isArray(t.assignee_ids) && t.assignee_ids.includes(uid)) return true;
+      if (t.assignee_id === uid) return true;
+      return false;
+    };
+
     if (isArchiveView) {
       list = list.filter((t: any) => t.archived === true);
     } else {
       list = list.filter((t: any) => !t.archived);
       if (view === "active") list = list.filter((t: any) => t.status !== "done");
       if (view === "completed") list = list.filter((t: any) => t.status === "done");
-      if (view === "my") list = list.filter((t: any) => t.assignee_id === currentSessionUser?.user_id);
-      if (view === "assigned") list = list.filter((t: any) => t.assignee_id === currentSessionUser?.user_id);
+      if (view === "my" || view === "assigned") list = list.filter((t: any) => isTaskAssignedToUser(t, currentSessionUser?.user_id));
       if (view === "requested") list = list.filter((t: any) => t.created_by === currentSessionUser?.user_id);
       if (view === "today") {
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -716,7 +1340,7 @@ async function startServer() {
 
     if (project_id) list = list.filter((t: any) => t.project_id === project_id);
     if (board_id) list = list.filter((t: any) => t.board_id === board_id);
-    if (assignee_id) list = list.filter((t: any) => t.assignee_id === assignee_id);
+    if (assignee_id) list = list.filter((t: any) => isTaskAssignedToUser(t, String(assignee_id)));
     if (priority) list = list.filter((t: any) => (t.priority || "").toLowerCase() === String(priority).toLowerCase());
     if (label) list = list.filter((t: any) => (t.label_ids || []).includes(label));
     if (department) list = list.filter((t: any) => t.department === department);
@@ -757,6 +1381,14 @@ async function startServer() {
     const doneCount = cps.filter((c: any) => c.done).length;
     const progress = cps.length > 0 ? Math.round((doneCount / cps.length) * 100) : (req.body.progress ?? (req.body.status === "done" ? 100 : 0));
 
+    // Normalize assignee_ids and assignee_id
+    let assigneeIds = Array.isArray(req.body.assignee_ids) ? [...req.body.assignee_ids] : [];
+    if (req.body.assignee_id && !assigneeIds.includes(req.body.assignee_id)) {
+      assigneeIds.unshift(req.body.assignee_id);
+    }
+    assigneeIds = assigneeIds.filter(Boolean);
+    const primaryAssigneeId = assigneeIds[0] || null;
+
     const t = {
       id: `tsk_${Date.now()}`,
       number_str: taskNum,
@@ -775,6 +1407,8 @@ async function startServer() {
         status: "pending"
       },
       ...req.body,
+      assignee_id: primaryAssigneeId,
+      assignee_ids: assigneeIds,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -795,6 +1429,23 @@ async function startServer() {
       created_at: new Date().toISOString()
     });
     broadcast({ type: "tasks:changed", task: t });
+
+    // Notify all assigned users
+    assigneeIds.forEach((uid: string) => {
+      if (uid && uid !== currentSessionUser?.user_id) {
+        createNotification({
+          user_id: uid,
+          title: "Tugas Baru Ditugaskan",
+          body: `${currentSessionUser?.name || "Seseorang"} menugaskan "${t.title}" kepadamu.`,
+          type: "task_assigned",
+          category: "tasks",
+          actor_id: currentSessionUser?.user_id,
+          link: `/tasks?task=${t.id}`,
+          task_id: t.id
+        });
+      }
+    });
+
     res.json(t);
   });
 
@@ -822,7 +1473,8 @@ async function startServer() {
         description: item.description || "",
         status: item.status || "todo",
         priority: item.priority || "medium",
-        assignee_id: item.assignee_id || currentSessionUser?.user_id || "user_admin1",
+        assignee_id: (Array.isArray(item.assignee_ids) && item.assignee_ids[0]) || item.assignee_id || currentSessionUser?.user_id || "user_admin1",
+        assignee_ids: Array.isArray(item.assignee_ids) && item.assignee_ids.length ? item.assignee_ids : [item.assignee_id || currentSessionUser?.user_id || "user_admin1"],
         board_id: item.board_id || "brd_1",
         project_id: item.project_id || null,
         label_ids: Array.isArray(item.label_ids) ? item.label_ids : ["lbl_1"],
@@ -887,6 +1539,11 @@ async function startServer() {
       ids.forEach((id: string) => {
         const t = db.tasks.find((x: any) => x.id === id);
         if (t) {
+          if (patch.assignee_id && !patch.assignee_ids) {
+            patch.assignee_ids = [patch.assignee_id];
+          } else if (patch.assignee_ids && !patch.assignee_id) {
+            patch.assignee_id = patch.assignee_ids[0] || null;
+          }
           Object.assign(t, patch);
           if (patch.archived) {
             t.archived_at = t.archived_at || new Date().toISOString();
@@ -983,8 +1640,55 @@ async function startServer() {
       t.archived_month = t.archived_month || new Date().toISOString().slice(0, 7);
     }
 
+    const oldAssignees: string[] = Array.isArray(t.assignee_ids) && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
+    if (Array.isArray(req.body.assignee_ids)) {
+      req.body.assignee_ids = req.body.assignee_ids.filter(Boolean);
+      req.body.assignee_id = req.body.assignee_ids[0] || null;
+    } else if (req.body.assignee_id !== undefined && !req.body.assignee_ids) {
+      req.body.assignee_ids = req.body.assignee_id ? [req.body.assignee_id] : [];
+    }
+
+    const oldStatus = t.status;
     req.body.updated_at = new Date().toISOString();
     Object.assign(t, req.body);
+
+    // Notify newly assigned users
+    if (Array.isArray(t.assignee_ids)) {
+      const newlyAssigned = t.assignee_ids.filter((uid: string) => !oldAssignees.includes(uid));
+      newlyAssigned.forEach((userId: string) => {
+        if (userId !== currentSessionUser?.user_id) {
+          createNotification({
+            user_id: userId,
+            title: "Tugas Ditugaskan Kepadamu",
+            body: `${currentSessionUser?.name || "Seseorang"} menugaskan "${t.title}" kepadamu.`,
+            type: "task_assigned",
+            category: "tasks",
+            actor_id: currentSessionUser?.user_id,
+            link: `/tasks?task=${t.id}`,
+            task_id: t.id
+          });
+        }
+      });
+    }
+    
+    // Notify requestors if status changed
+    if (req.body.status && req.body.status !== oldStatus) {
+      const requestors = Array.isArray(t.requestor_ids) ? t.requestor_ids : [t.created_by];
+      requestors.forEach((userId: string) => {
+        if (userId === currentSessionUser?.user_id) return;
+        createNotification({
+          user_id: userId,
+          title: "Update Status Tugas",
+          body: `Status "${t.title}" berubah menjadi ${t.status}.`,
+          type: "task_status",
+          category: "tasks",
+          actor_id: currentSessionUser?.user_id,
+          link: `/tasks?id=${t.id}`,
+          task_id: t.id
+        });
+      });
+    }
+
     broadcast({ type: "tasks:changed", task: t });
     res.json(t);
   });
@@ -1003,6 +1707,22 @@ async function startServer() {
     t.comments = t.comments || [];
     const c = { id: `cmt_${Date.now()}`, user_id: currentSessionUser?.user_id, ...req.body, created_at: new Date().toISOString() };
     t.comments.push(c);
+
+    // Notify task creator and assignee
+    const usersToNotify = new Set([t.created_by, t.assignee_id].filter(id => id && id !== currentSessionUser?.user_id));
+    usersToNotify.forEach(userId => {
+      createNotification({
+        user_id: userId as string,
+        title: "Komentar Baru pada Tugas",
+        body: `${currentSessionUser?.name || "Seseorang"} berkomentar di "${t.title}": ${c.text || "Pesan"}`,
+        type: "task_comment",
+        category: "tasks",
+        actor_id: currentSessionUser?.user_id,
+        link: `/tasks?id=${t.id}`,
+        task_id: t.id
+      });
+    });
+
     res.json(c);
   });
 
@@ -1139,20 +1859,29 @@ async function startServer() {
 
   // Groups & Channels Endpoints
   app.get("/api/groups/browse", (req, res) => {
-    res.json(db.groups);
+    const userId = currentSessionUser?.user_id;
+    const list = db.groups.map((g: any) => ({
+      ...g,
+      is_member: (g.member_ids || []).includes(userId),
+      member_count: (g.member_ids || []).length
+    }));
+    res.json(list);
   });
 
-  app.post("/api/groups/:id/join", (req, res) => {
-    const g = db.groups.find((x: any) => x.id === req.params.id);
-    if (g) {
-      g.is_member = true;
-      g.member_count = (g.member_count || 1) + 1;
-    }
-    res.json({ success: true });
-  });
+
 
   app.post("/api/groups", (req, res) => {
-    const g = { id: `conv_${Date.now()}`, member_count: 1, is_member: true, ...req.body };
+    const isVerified = currentSessionUser?.role === "super_admin";
+    const g = { 
+      id: `conv_${Date.now()}`, 
+      member_count: 1, 
+      is_member: true, 
+      is_verified: isVerified,
+      created_by: currentSessionUser?.user_id,
+      member_ids: [currentSessionUser?.user_id],
+      type: "group",
+      ...req.body 
+    };
     db.groups.push(g);
     db.conversations.push(g);
     res.json(g);
@@ -1207,10 +1936,12 @@ async function startServer() {
 
     const activeTasksTotal = db.tasks.filter((t: any) => t.status !== "done" && !t.archived).length;
 
+    const isUserAssigned = (t: any, uid: string) => (Array.isArray(t.assignee_ids) && t.assignee_ids.includes(uid)) || t.assignee_id === uid;
+
     const people = db.users
       .filter((u: any) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant")
       .map((u: any) => {
-      const userActiveTasks = db.tasks.filter((t: any) => t.assignee_id === u.user_id && t.status !== "done" && !t.archived);
+      const userActiveTasks = db.tasks.filter((t: any) => isUserAssigned(t, u.user_id) && t.status !== "done" && !t.archived);
       const activeCount = userActiveTasks.length;
       const share = activeTasksTotal > 0 ? Math.round((activeCount / activeTasksTotal) * 100) : 0;
       const dayDeadlines = userActiveTasks.filter((t: any) => t.deadline && t.deadline.slice(0, 10) === anchor).length;
@@ -1343,6 +2074,39 @@ async function startServer() {
       }
     }
     db.posts.unshift(newPost);
+    
+    // Notify mentioned users
+    if (Array.isArray(mention_ids)) {
+      mention_ids.forEach((userId: string) => {
+        if (userId === currentSessionUser?.user_id) return;
+        createNotification({
+          user_id: userId,
+          title: "Anda dimention dalam postingan",
+          body: `${currentSessionUser?.name || "Seseorang"} menyebut Anda dalam sebuah postingan: "${text?.slice(0, 50)}${text?.length > 50 ? '...' : ''}"`,
+          type: "post_mention",
+          category: "social",
+          actor_id: currentSessionUser?.user_id,
+          link: `/beranda`
+        });
+      });
+    }
+
+    // Notify parent author if this is a reply
+    if (parent_id) {
+      const parent = db.posts.find((p: any) => p.id === parent_id);
+      if (parent && parent.author_id !== currentSessionUser?.user_id) {
+        createNotification({
+          user_id: parent.author_id,
+          title: "Balasan baru pada postingan Anda",
+          body: `${currentSessionUser?.name || "Seseorang"} membalas postingan Anda.`,
+          type: "post_reply",
+          category: "social",
+          actor_id: currentSessionUser?.user_id,
+          link: `/beranda`
+        });
+      }
+    }
+
     res.json(newPost);
   });
 
@@ -1548,11 +2312,19 @@ async function startServer() {
   });
 
   app.get("/api/conversations", (req, res) => {
-    const list = db.conversations.map((c: any) => ({
-      ...c,
-      member_ids: c.member_ids || c.members || [],
-      members: c.members || c.member_ids || []
-    }));
+    const userId = currentSessionUser?.user_id;
+    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+
+    const list = db.conversations
+      .filter((c: any) => {
+        const mems = c.member_ids || c.members || [];
+        return mems.includes(userId);
+      })
+      .map((c: any) => ({
+        ...c,
+        member_ids: c.member_ids || c.members || [],
+        members: c.members || c.member_ids || []
+      }));
     res.json(list);
   });
 
@@ -1583,20 +2355,33 @@ async function startServer() {
   });
 
   app.get("/api/conversations/:id", (req, res) => {
+    const userId = currentSessionUser?.user_id;
+    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+
     let c = db.conversations.find((x: any) => x.id === req.params.id);
     if (!c) {
-      c = {
-        id: req.params.id,
-        type: "group",
-        name: "General",
-        member_ids: db.users.map((u: any) => u.user_id),
-        admin_ids: ["user_admin1"],
-        unread: 0,
-        is_member: true
-      };
-      db.conversations.push(c);
+      // Fallback for default general group if it doesn't exist yet
+      if (req.params.id === 'conv_1') {
+        c = {
+          id: 'conv_1',
+          type: "group",
+          name: "General",
+          member_ids: db.users.map((u: any) => u.user_id),
+          admin_ids: ["user_admin1"],
+          unread: 0,
+          is_member: true
+        };
+        db.conversations.push(c);
+      } else {
+        return res.status(404).json({ detail: "Conversation not found" });
+      }
     }
+
     const mems = c.member_ids || c.members || [];
+    if (!mems.includes(userId)) {
+      return res.status(403).json({ detail: "You are not a member of this conversation" });
+    }
+
     res.json({
       ...c,
       member_ids: mems,
@@ -1609,6 +2394,17 @@ async function startServer() {
 
   app.get("/api/conversations/:id/messages", (req, res) => {
     const { id } = req.params;
+    const userId = currentSessionUser?.user_id;
+    if (!userId) return res.status(401).json({ detail: "Unauthorized" });
+
+    const c = db.conversations.find((x: any) => x.id === id);
+    if (c) {
+      const mems = c.member_ids || c.members || [];
+      if (!mems.includes(userId)) {
+        return res.status(403).json({ detail: "You are not a member of this conversation" });
+      }
+    }
+
     const { q, before } = req.query;
     let list = (db.messages || []).filter((m: any) => m.conversation_id === id);
     if (q) {
@@ -1629,6 +2425,19 @@ async function startServer() {
     const { id } = req.params;
     const sender_id = currentSessionUser?.user_id || "user_admin1";
 
+    const conv = db.conversations.find((x: any) => x.id === id);
+    if (!conv) return res.status(404).json({ detail: "Conversation not found" });
+
+    const mems = conv.member_ids || conv.members || [];
+    if (!mems.includes(sender_id)) {
+      if (conv.type === "dm" || currentSessionUser?.role === "super_admin") {
+        if (!Array.isArray(conv.member_ids)) conv.member_ids = [];
+        conv.member_ids.push(sender_id);
+      } else {
+        return res.status(403).json({ detail: "You are not a member of this conversation" });
+      }
+    }
+
     const stickerObj = req.body.sticker || (req.body.sticker_id && (db.stickers || []).find((s: any) => s.id === req.body.sticker_id));
 
     const msg = {
@@ -1647,13 +2456,29 @@ async function startServer() {
     };
     db.messages.push(msg);
 
-    const conv = db.conversations.find((x: any) => x.id === id);
     if (conv) {
       conv.last_message_preview = msg.type === "sticker" ? `[Stiker] ${stickerObj?.name || 'Stiker'}` : (msg.text || "Sent an attachment");
       conv.last_message_at = msg.created_at;
     }
 
     broadcast({ type: "message:new", data: msg });
+    
+    // Notify mentioned users in chat
+    if (Array.isArray(msg.mention_ids)) {
+      msg.mention_ids.forEach((userId: string) => {
+        if (userId === sender_id) return;
+        createNotification({
+          user_id: userId,
+          title: "Anda disebut dalam pesan",
+          body: `${currentSessionUser?.name || "Seseorang"} menyebut Anda dalam pesan: "${msg.text?.slice(0, 50)}${msg.text?.length > 50 ? '...' : ''}"`,
+          type: "message_mention",
+          category: "dm",
+          actor_id: sender_id,
+          link: `/messages/${id}`,
+          conversation_id: id
+        });
+      });
+    }
 
     // Advanced AI Copilot auto-reply for Circle Assistant
     const isCircleDM = conv && conv.type === "dm" && (conv.member_ids?.includes("user_circle_assistant") || conv.members?.includes("user_circle_assistant"));
@@ -1770,37 +2595,44 @@ async function startServer() {
   });
 
   app.post("/api/groups/:id/join", (req, res) => {
-    const conv = db.conversations.find((x: any) => x.id === req.params.id);
     const userId = currentSessionUser?.user_id || "user_admin1";
-    if (conv) {
-      conv.member_ids = conv.member_ids || [];
-      if (!conv.member_ids.includes(userId)) conv.member_ids.push(userId);
-      conv.is_member = true;
-    }
+    [db.groups, db.conversations].forEach(list => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.member_ids = Array.from(new Set([...(g.member_ids || []), userId]));
+      }
+    });
     res.json({ success: true });
   });
 
   app.post("/api/groups/:id/members", (req, res) => {
-    const conv = db.conversations.find((x: any) => x.id === req.params.id);
-    if (conv) {
-      conv.member_ids = conv.member_ids || [];
-      if (req.body.add) conv.member_ids = [...new Set([...conv.member_ids, ...req.body.add])];
-      if (req.body.remove) conv.member_ids = conv.member_ids.filter((x: any) => !req.body.remove.includes(x));
-      if (req.body.admin_id) {
-        conv.admin_ids = conv.admin_ids || [];
-        if (req.body.make_admin) conv.admin_ids.push(req.body.admin_id);
-        else conv.admin_ids = conv.admin_ids.filter((x: any) => x !== req.body.admin_id);
+    [db.groups, db.conversations].forEach(list => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.member_ids = g.member_ids || [];
+        if (req.body.add) g.member_ids = Array.from(new Set([...g.member_ids, ...req.body.add]));
+        if (req.body.remove) g.member_ids = g.member_ids.filter((x: any) => !req.body.remove.includes(x));
+        if (req.body.admin_id) {
+          g.admin_ids = g.admin_ids || [];
+          if (req.body.make_admin) {
+            if (!g.admin_ids.includes(req.body.admin_id)) g.admin_ids.push(req.body.admin_id);
+          } else {
+            g.admin_ids = g.admin_ids.filter((x: any) => x !== req.body.admin_id);
+          }
+        }
       }
-    }
+    });
     res.json({ success: true });
   });
 
   app.post("/api/groups/:id/leave", (req, res) => {
-    const conv = db.conversations.find((x: any) => x.id === req.params.id);
     const userId = currentSessionUser?.user_id || "user_admin1";
-    if (conv) {
-      conv.member_ids = (conv.member_ids || []).filter((x: any) => x !== userId);
-    }
+    [db.groups, db.conversations].forEach(list => {
+      const g = list.find((x: any) => x.id === req.params.id);
+      if (g) {
+        g.member_ids = (g.member_ids || []).filter((x: any) => x !== userId);
+      }
+    });
     res.json({ success: true });
   });
 
@@ -2258,11 +3090,31 @@ async function startServer() {
     res.json(db.workspace);
   });
 
+  app.get("/api/item-types", (req, res) => {
+    res.json(db.workspace.item_types || DEFAULT_WORKSPACE_ITEM_TYPES);
+  });
+
   app.post("/api/item-types", (req, res) => {
     db.workspace.item_types = db.workspace.item_types || [];
-    db.workspace.item_types.push(req.body);
+    const name = (req.body.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Nama item tidak boleh kosong" });
+
+    const color = req.body.color || "#E2E8F0";
+    const text_color = req.body.text_color || (isDarkColor(color) ? "#FFFFFF" : "#1E293B");
+    const border_color = req.body.border_color || (isDarkColor(color) ? color : undefined);
+
+    let existing = db.workspace.item_types.find((x: any) => x.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      existing.color = color;
+      if (text_color) existing.text_color = text_color;
+      if (border_color) existing.border_color = border_color;
+    } else {
+      existing = { name, color, text_color, border_color };
+      db.workspace.item_types.push(existing);
+    }
     saveDbToFile();
-    res.json(req.body);
+    broadcast({ type: "workspace:changed" });
+    res.json(existing);
   });
 
   app.put("/api/prefs", (req, res) => {

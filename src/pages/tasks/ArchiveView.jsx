@@ -43,8 +43,9 @@ export default function ArchiveView({ tasks, onOpen, reload, projects }) {
       if (selectedMonth && (t.archived_month || (t.archived_at || t.completed_at || "").slice(0, 7)) !== selectedMonth) {
         return false;
       }
-      if (selectedAssignee && t.assignee_id !== selectedAssignee) {
-        return false;
+      if (selectedAssignee) {
+        const uids = t.assignee_ids && t.assignee_ids.length ? t.assignee_ids : (t.assignee_id ? [t.assignee_id] : []);
+        if (!uids.includes(selectedAssignee)) return false;
       }
       if (selectedPriority && (t.priority || "").toLowerCase() !== selectedPriority.toLowerCase()) {
         return false;

@@ -96,15 +96,15 @@ function Detail({ pid }) {
 
 const INITIAL_PROJECTS = [
   {
-    id: "proj_g6",
-    name: "Google Integration V6",
-    description: "Core migration to Google Workspace APIs and Google Auth",
+    id: "prj_1",
+    name: "Enterprise Workspace Migration",
+    description: "Migrasi sistem kolaborasi internal ASLI RI ke platform terpadu.",
     status: "active",
-    progress: 80,
-    task_done: 4,
-    task_total: 5,
+    progress: 60,
+    task_done: 12,
+    task_total: 20,
     owner_id: "user_admin1",
-    member_ids: ["user_admin1", "user_demo1"]
+    member_ids: ["user_admin1", "user_budi", "user_siti", "user_dian"]
   }
 ];
 
@@ -112,6 +112,7 @@ let GLOBAL_PROJECTS_CACHE = null;
 
 export default function Projects() {
   const { pid } = useParams();
+  const [open, setOpen] = useState(false);
   const [list, setList] = useState(() => {
     if (GLOBAL_PROJECTS_CACHE && Array.isArray(GLOBAL_PROJECTS_CACHE)) return GLOBAL_PROJECTS_CACHE;
     try {
@@ -126,24 +127,25 @@ export default function Projects() {
     } catch {}
     return INITIAL_PROJECTS;
   });
-  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(!list.length);
   const navigate = useNavigate();
   useEffect(() => {
     if (!pid) {
+      setLoading(!list.length);
       api.get("/projects").then((r) => {
-        if (Array.isArray(r.data) && r.data.length > 0) {
+        if (Array.isArray(r.data)) {
           setList(r.data);
           GLOBAL_PROJECTS_CACHE = r.data;
           try { localStorage.setItem("circle_projects_cache", JSON.stringify(r.data)); } catch {}
         }
-      });
+      }).finally(() => setLoading(false));
     }
-  }, [pid]);
+  }, [pid]); // eslint-disable-line
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="projects-page">
       {pid ? <Detail pid={pid} /> : <>
         <PageHeader icon={FolderKanban} title="Projects" subtitle="Progress is calculated from real task data." actions={<AccentButton onClick={() => setOpen(true)} data-testid="new-project-btn"><Plus size={16} />New project</AccentButton>} />
-        {!list.length ? <Empty icon={FolderKanban} title="No projects yet" /> : (
+        {loading && !list.length ? <div className="flex py-20 items-center justify-center"><Spinner label="Projects" /></div> : !list.length ? <Empty icon={FolderKanban} title="No projects yet" /> : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {list.map((p, i) => (
               <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>

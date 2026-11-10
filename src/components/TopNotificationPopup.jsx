@@ -16,8 +16,10 @@ export default function TopNotificationPopup({ notif, onClose }) {
 
   const DURATION = 10000; // 10 seconds auto-dismiss
 
+  const isPaused = paused || busy || replyOpen;
+
   useEffect(() => {
-    if (paused) return undefined;
+    if (!notif || isPaused) return undefined;
     const interval = 100;
     const step = (interval / DURATION) * 100;
 
@@ -33,7 +35,7 @@ export default function TopNotificationPopup({ notif, onClose }) {
     }, interval);
 
     return () => clearInterval(timer);
-  }, [paused, onClose]);
+  }, [isPaused, notif, onClose]);
 
   if (!notif) return null;
 
@@ -116,8 +118,12 @@ export default function TopNotificationPopup({ notif, onClose }) {
         </div>
 
         <button
-          onClick={onClose}
-          className="rounded-full p-1 text-sub hover:bg-surface2 hover:text-ink transition-colors"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose?.();
+          }}
+          className="rounded-full p-1.5 text-sub hover:bg-surface2 hover:text-ink transition-colors cursor-pointer"
           title="Tutup Notifikasi"
           data-testid="close-top-notif-btn"
         >

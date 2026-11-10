@@ -1,30 +1,37 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Users, Search, MessageCircle, MapPin } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { api } from "../lib/api";
-import { Avatar, PageHeader, Empty } from "../components/common";
+import { Avatar, PageHeader, Empty, Spinner } from "../components/common";
 
 export default function Directory() {
   const { users, online } = useApp();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState([]);
+  const [loading, setLoading] = useState(!users || users.length === 0);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (users && users.length > 0) setLoading(false);
+  }, [users]);
+
   const humanUsers = useMemo(() => users.filter((u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"), [users]);
   const divisions = useMemo(() => [...new Set(humanUsers.map((u) => u.department || "Lainnya"))].sort(), [humanUsers]);
   const list = humanUsers.filter((u) => (!sel.length || sel.includes(u.department || "Lainnya")) && `${u.name} ${u.job_title}`.toLowerCase().includes(q.toLowerCase()));
   const toggle = (d) => setSel(sel.includes(d) ? sel.filter((x) => x !== d) : [...sel, d]);
   const dm = async (uid) => { const { data } = await api.post("/conversations/dm", { user_id: uid }); navigate(`/messages/${data.id}`); };
   const chip = (on) => `h-10 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors ${on ? "bg-brand text-white" : "border bg-surface text-sub hover:text-ink"}`;
+  
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="directory-page">
-      <PageHeader icon={Users} title="Employee Directory" subtitle={`${list.length} dari ${users.length} orang`} />
+      <PageHeader icon={Users} title="Employee Directory" subtitle={loading ? "Memuat data karyawan..." : `${list.length} dari ${humanUsers.length} orang`} />
       <div className="mb-6 flex flex-wrap items-center gap-2" data-testid="division-tabs">
         <button onClick={() => setSel([])} className={chip(!sel.length)} data-testid="division-tab-all">Semua</button>
-        {divisions.map((d) => <button key={d} onClick={() => toggle(d)} className={chip(sel.includes(d))} data-testid={`division-tab-${d.replace(/\s/g, "-")}`}>{d} <span className="opacity-70">{users.filter((u) => (u.department || "Lainnya") === d).length}</span></button>)}
+        {divisions.map((d) => <button key={d} onClick={() => toggle(d)} className={chip(sel.includes(d))} data-testid={`division-tab-${d.replace(/\s/g, "-")}`}>{d} <span className="opacity-70">{humanUsers.filter((u) => (u.department || "Lainnya") === d).length}</span></button>)}
         <div className="ml-auto flex h-10 w-full items-center gap-2 rounded-full border bg-surface px-4 sm:w-64"><Search size={15} className="text-sub" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama…" className="flex-1 bg-transparent text-sm outline-none" data-testid="directory-search-input" /></div>
       </div>
-      {!list.length ? <Empty icon={Users} title="Tidak ada karyawan" /> : (
+      {loading ? <Spinner label="Karyawan" /> : !list.length ? <Empty icon={Users} title="Tidak ada karyawan" /> : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {list.map((u) => (
             <div key={u.user_id} className="card flex flex-col p-5" data-testid={`employee-card-${u.user_id}`}>
@@ -46,3 +53,4 @@ export default function Directory() {
     </div>
   );
 }
+

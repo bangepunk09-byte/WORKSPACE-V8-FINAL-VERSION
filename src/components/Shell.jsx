@@ -3,7 +3,6 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Home, MessageCircle, Hash, Users, Network, CheckSquare, FolderKanban, Bell, Settings, Search, Moon, Sun, LogOut, Menu, ChevronsLeft, ChevronsRight, FlaskConical, Newspaper, CalendarDays, Volume2, VolumeX } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Avatar, Logo, ROLE_NAMES } from "./common";
-import { CallProvider } from "./CallLayer";
 import SearchDialog from "./SearchDialog";
 import { NotificationRail } from "./NotificationPanel";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
@@ -190,7 +189,7 @@ export default function Shell() {
   }, []);
   const setCompact = setCompactState;
   return (
-    <CallProvider>
+    <>
       <TopNotificationPopup notif={topNotif} onClose={closeTopNotif} />
       <div className="flex min-h-screen w-full bg-background">
         <Sidebar compact={compact} setCompact={setCompact} openSearch={() => setSearch(true)} />
@@ -205,6 +204,6 @@ export default function Shell() {
         <NotificationRail open={notifOpen} setOpen={setNotifOpen} />
       </div>
       <SearchDialog open={search} onOpenChange={setSearch} />
-    </CallProvider>
+    </>
   );
 }

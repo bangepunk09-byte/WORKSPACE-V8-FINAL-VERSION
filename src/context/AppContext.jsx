@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { api, wsUrl } from "../lib/api";
 import { applyTheme, buildTheme } from "../lib/theme";
 import { getTranslation } from "../lib/i18n";
+import { playSound } from "../lib/sound";
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -65,11 +66,7 @@ export function AppProvider({ children }) {
         localStorage.setItem("circle_user_prefs", JSON.stringify(mergedPrefs));
       } catch {}
     } catch {
-      setSession((prev) => prev || {
-        user: { user_id: "user_admin1", name: "Admin ASLI RI", role: "super_admin" },
-        workspace: { name: "CIRCLE ASLI RI Workspace", theme: { primary: "#2F7DE1", mode: "light" } },
-        prefs: cachedPrefs
-      });
+      setSession(null);
     }
   }, []);
 
@@ -113,6 +110,7 @@ export function AppProvider({ children }) {
           });
         }
         if (evt.type === "notification") {
+          if (evt.data?.user_id && me?.user_id && evt.data.user_id !== me.user_id) return;
           setUnread((x) => x + 1);
           setTopNotif({
             id: evt.data.id || `notif_${Date.now()}`,
@@ -124,6 +122,7 @@ export function AppProvider({ children }) {
             task_id: evt.data.task_id,
             sender: evt.data.sender
           });
+          playSound("notification");
           if (document.hidden && window.Notification?.permission === "granted") new Notification(evt.data.title, { body: evt.data.body });
         }
         if (evt.type === "message:new" && evt.data?.sender_id !== me?.user_id) {
@@ -135,9 +134,10 @@ export function AppProvider({ children }) {
               id: `msg_notif_${Date.now()}`,
               title: `Pesan Baru dari ${sender?.name || 'Circle'}`,
               body: evt.data.text || "Mengirimkan pesan baru",
-              type: "dm",
+              type: evt.data.type || "dm",
               conversation_id: evt.data.conversation_id,
-              sender
+              sender,
+              access_request: evt.data.access_request
             });
           }
         }

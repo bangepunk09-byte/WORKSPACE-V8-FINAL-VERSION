@@ -154,6 +154,15 @@ select option {
   100% { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes card-fade-in {
+  0% { opacity: 0.2; transform: scale(0.98); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.animate-card-fade {
+  animation: card-fade-in 350ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @keyframes view-crossfade {
   0% { opacity: 0; }
   100% { opacity: 1; }
