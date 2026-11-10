@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import fs from 'fs';
 import { INITIAL_TASKS } from './src/data/initialTasks.js';
+import { INITIAL_DRIVE_SHORTCUTS } from './src/data/initialDriveShortcuts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -118,6 +119,7 @@ async function startServer() {
     task_automations: [],
     audit_logs: [],
     invitations: [],
+    drive_shortcuts: [],
     prefs: {}
   };
 
@@ -630,6 +632,10 @@ async function startServer() {
     });
   }
 
+  if (!Array.isArray(db.drive_shortcuts) || db.drive_shortcuts.length === 0) {
+    db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+  }
+
   saveDbToFile();
 
   // Auto-save DB on any data-modifying HTTP request
@@ -673,7 +679,8 @@ async function startServer() {
       workspace: db.workspace,
       prefs: db.prefs[latestUser.user_id] || { theme_mode: "light" },
       users: db.users,
-      labels: db.labels
+      labels: db.labels,
+      drive_shortcuts: db.drive_shortcuts || []
     });
   });
 
@@ -2465,12 +2472,43 @@ async function startServer() {
 
   app.post("/api/posts", (req, res) => {
     const { text, poll, parent_id, attachments, mention_ids } = req.body;
+    const uid = currentSessionUser?.user_id || "user_admin1";
+    let createdPollObj: any = null;
+    if (poll && poll.question) {
+      db.polls = db.polls || [];
+      const rawOpts = Array.isArray(poll.options) ? poll.options.filter((x: any) => String(x || "").trim()) : [];
+      const pollId = `poll_${Date.now()}`;
+      const newPoll = {
+        id: pollId,
+        question: String(poll.question).trim(),
+        multiple: !!poll.multiple,
+        anonymous: !!poll.anonymous,
+        allow_change: poll.allow_change !== false,
+        expires_at: poll.expires_at || null,
+        status: "open",
+        options: rawOpts.map((opt: any, idx: number) =>
+          typeof opt === "string" ? { id: `opt_${idx + 1}`, text: opt } : opt
+        ),
+        votes_by_user: {},
+        created_by: uid,
+        created_at: new Date().toISOString()
+      };
+      db.polls.push(newPoll);
+      createdPollObj = {
+        ...newPoll,
+        counts: Object.fromEntries(newPoll.options.map((o: any) => [o.id, 0])),
+        voters: Object.fromEntries(newPoll.options.map((o: any) => [o.id, []])),
+        my_vote: [],
+        total_votes: 0
+      };
+    }
     const newPost = {
       id: `pst_${Date.now()}`,
-      author_id: currentSessionUser?.user_id || "user_admin1",
+      author_id: uid,
       text: text || "",
       attachments: attachments || [],
-      poll_id: poll?.id || null,
+      poll_id: createdPollObj?.id || poll?.id || null,
+      poll: createdPollObj || null,
       mention_ids: mention_ids || [],
       parent_id: parent_id || null,
       likes: [],
@@ -3205,12 +3243,125 @@ async function startServer() {
     res.json(newPack);
   });
 
+  const formatPollForUser = (poll: any, uid: string) => {
+    if (!poll) return null;
+    const options = Array.isArray(poll.options)
+      ? poll.options.map((o: any, idx: number) =>
+          typeof o === "string" ? { id: `opt_${idx + 1}`, text: o } : o
+        )
+      : [];
+    const votesByUser: Record<string, string[]> = poll.votes_by_user || {};
+    const counts: Record<string, number> = {};
+    const voters: Record<string, string[]> = {};
+    options.forEach((o: any) => {
+      counts[o.id] = 0;
+      voters[o.id] = [];
+    });
+    let totalVotes = 0;
+    Object.entries(votesByUser).forEach(([voterId, chosenIds]) => {
+      if (Array.isArray(chosenIds)) {
+        chosenIds.forEach((oid) => {
+          if (counts[oid] !== undefined) {
+            counts[oid] += 1;
+            voters[oid].push(voterId);
+            totalVotes += 1;
+          }
+        });
+      }
+    });
+    return {
+      ...poll,
+      status: poll.status || "open",
+      options,
+      counts,
+      voters,
+      my_vote: votesByUser[uid] || [],
+      total_votes: totalVotes
+    };
+  };
+
   app.get("/api/polls/:id", (req, res) => {
-    res.json({ id: req.params.id, question: "Polling", options: [], votes: {} });
+    db.polls = db.polls || [];
+    const uid = currentSessionUser?.user_id || "user_admin1";
+    const found = db.polls.find((p: any) => p.id === req.params.id);
+    if (!found) {
+      return res.json({
+        id: req.params.id,
+        question: "Polling Tim",
+        status: "open",
+        multiple: false,
+        anonymous: false,
+        allow_change: true,
+        options: [
+          { id: "opt_1", text: "Setuju" },
+          { id: "opt_2", text: "Perlu Diskusi" }
+        ],
+        counts: { opt_1: 1, opt_2: 0 },
+        voters: { opt_1: [uid], opt_2: [] },
+        my_vote: [],
+        total_votes: 1
+      });
+    }
+    res.json(formatPollForUser(found, uid));
   });
 
   app.post("/api/polls/:id/vote", (req, res) => {
-    res.json({ success: true });
+    db.polls = db.polls || [];
+    const uid = currentSessionUser?.user_id || "user_admin1";
+    const found = db.polls.find((p: any) => p.id === req.params.id);
+    if (!found) return res.status(404).json({ detail: "Poll tidak ditemukan" });
+    found.votes_by_user = found.votes_by_user || {};
+    const optionIds = Array.isArray(req.body?.option_ids) ? req.body.option_ids : [];
+    found.votes_by_user[uid] = optionIds;
+    saveDbToFile();
+    const formatted = formatPollForUser(found, uid);
+    broadcast({ type: "poll:update", data: { poll_id: found.id, poll: formatted } });
+    res.json(formatted);
+  });
+
+  app.post("/api/conversations/:id/polls", (req, res) => {
+    db.polls = db.polls || [];
+    const uid = currentSessionUser?.user_id || "user_admin1";
+    const body = req.body || {};
+    const rawOpts = Array.isArray(body.options) ? body.options.filter((x: any) => String(x || "").trim()) : [];
+    const newPoll = {
+      id: `poll_${Date.now()}`,
+      conversation_id: req.params.id,
+      question: String(body.question || "Polling").trim(),
+      multiple: !!body.multiple,
+      anonymous: !!body.anonymous,
+      allow_change: body.allow_change !== false,
+      expires_at: body.expires_at || null,
+      status: "open",
+      options: rawOpts.map((opt: any, idx: number) =>
+        typeof opt === "string" ? { id: `opt_${idx + 1}`, text: opt } : opt
+      ),
+      votes_by_user: {},
+      created_by: uid,
+      created_at: new Date().toISOString()
+    };
+    db.polls.push(newPoll);
+    const formatted = formatPollForUser(newPoll, uid);
+    const msg = {
+      id: `msg_${Date.now()}`,
+      conversation_id: req.params.id,
+      sender_id: uid,
+      user_id: uid,
+      text: `📊 Polling: ${newPoll.question}`,
+      poll_id: newPoll.id,
+      poll: formatted,
+      reactions: {},
+      created_at: new Date().toISOString()
+    };
+    db.messages.push(msg);
+    const conv = db.conversations.find((c: any) => c.id === req.params.id);
+    if (conv) {
+      conv.last_message_preview = msg.text;
+      conv.last_message_at = msg.created_at;
+    }
+    saveDbToFile();
+    broadcast({ type: "message:new", data: msg });
+    res.json(formatted);
   });
 
   app.post("/api/tasks/:id/share", (req, res) => {
@@ -3603,6 +3754,133 @@ async function startServer() {
       tagline: db.workspace.tagline,
       logo_file_id: db.workspace.logo_file_id,
       login_image_file_id: db.workspace.login_image_file_id
+    });
+  });
+
+  // Google Drive Folder Shortcuts Directory CRUD
+  app.get("/api/drive-shortcuts", (req, res) => {
+    if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    res.json(db.drive_shortcuts);
+  });
+
+  app.post("/api/drive-shortcuts", (req, res) => {
+    if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    const body = req.body || {};
+    const now = new Date().toISOString();
+    const item = {
+      id: body.id || `drv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: (body.name || "Untitled Folder").trim(),
+      drive_folder_id: body.drive_folder_id || "",
+      drive_url: body.drive_url || "https://drive.google.com/drive/my-drive",
+      description: body.description || "",
+      category: body.category || "General",
+      badge: body.badge || "Google Drive",
+      color: body.color || "#FF5364",
+      icon: body.icon || "Folder",
+      pinned: body.pinned !== undefined ? !!body.pinned : true,
+      show_on_dashboard: body.show_on_dashboard !== undefined ? !!body.show_on_dashboard : true,
+      access_type: body.access_type || "custom",
+      allowed_departments: Array.isArray(body.allowed_departments) ? body.allowed_departments : [],
+      allowed_user_ids: Array.isArray(body.allowed_user_ids)
+        ? body.allowed_user_ids
+        : [currentSessionUser?.user_id || "user_admin1"],
+      created_by: body.created_by || currentSessionUser?.user_id || "user_admin1",
+      created_at: body.created_at || now,
+      updated_at: now
+    };
+    const existingIdx = db.drive_shortcuts.findIndex((s: any) => s.id === item.id);
+    if (existingIdx >= 0) {
+      db.drive_shortcuts[existingIdx] = item;
+    } else {
+      db.drive_shortcuts.unshift(item);
+    }
+    db.activity.unshift({
+      id: `act_${Date.now()}`,
+      user_id: currentSessionUser?.user_id || "user_admin1",
+      action: `menambahkan shortcut folder Google Drive "${item.name}" ke Direktori`,
+      created_at: now
+    });
+    saveDbToFile();
+    broadcast({ type: "drive_shortcuts:changed", data: db.drive_shortcuts });
+    res.json(item);
+  });
+
+  app.patch("/api/drive-shortcuts/:id", (req, res) => {
+    if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    const idx = db.drive_shortcuts.findIndex((s: any) => s.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ detail: "Shortcut tidak ditemukan" });
+    const prev = db.drive_shortcuts[idx];
+    const updated = {
+      ...prev,
+      ...req.body,
+      id: prev.id,
+      updated_at: new Date().toISOString()
+    };
+    db.drive_shortcuts[idx] = updated;
+    db.activity.unshift({
+      id: `act_${Date.now()}`,
+      user_id: currentSessionUser?.user_id || "user_admin1",
+      action: `memperbarui shortcut folder Google Drive "${updated.name}"`,
+      created_at: updated.updated_at
+    });
+    saveDbToFile();
+    broadcast({ type: "drive_shortcuts:changed", data: db.drive_shortcuts });
+    res.json(updated);
+  });
+
+  app.delete("/api/drive-shortcuts/:id", (req, res) => {
+    if (!Array.isArray(db.drive_shortcuts)) db.drive_shortcuts = [...INITIAL_DRIVE_SHORTCUTS];
+    const target = db.drive_shortcuts.find((s: any) => s.id === req.params.id);
+    db.drive_shortcuts = db.drive_shortcuts.filter((s: any) => s.id !== req.params.id);
+    if (target) {
+      db.activity.unshift({
+        id: `act_${Date.now()}`,
+        user_id: currentSessionUser?.user_id || "user_admin1",
+        action: `menghapus shortcut folder Google Drive "${target.name}" dari Direktori`,
+        created_at: new Date().toISOString()
+      });
+    }
+    saveDbToFile();
+    broadcast({ type: "drive_shortcuts:changed", data: db.drive_shortcuts });
+    res.json({ success: true });
+  });
+
+  // Global Workspace Search Endpoint
+  app.get("/api/search", (req, res) => {
+    const q = String(req.query.q || "").trim().toLowerCase();
+    if (!q) {
+      return res.json({
+        drive_shortcuts: [],
+        employees: [],
+        tasks: [],
+        groups: [],
+        messages: [],
+        projects: [],
+        polls: []
+      });
+    }
+    res.json({
+      drive_shortcuts: (db.drive_shortcuts || [])
+        .filter((d: any) => `${d.name} ${d.description || ""} ${d.category || ""}`.toLowerCase().includes(q))
+        .slice(0, 6),
+      employees: (db.users || [])
+        .filter((u: any) => !u.is_bot && u.role !== "assistant" && `${u.name} ${u.job_title || ""} ${u.department || ""}`.toLowerCase().includes(q))
+        .slice(0, 6),
+      tasks: (db.tasks || [])
+        .filter((t: any) => `${t.title} ${t.number_str || ""}`.toLowerCase().includes(q))
+        .slice(0, 6),
+      groups: (db.conversations || [])
+        .filter((c: any) => c.type === "group" && (c.name || "").toLowerCase().includes(q))
+        .slice(0, 6),
+      messages: (db.messages || [])
+        .filter((m: any) => (m.text || "").toLowerCase().includes(q))
+        .slice(0, 6),
+      projects: (db.projects || [])
+        .filter((p: any) => (p.name || "").toLowerCase().includes(q))
+        .slice(0, 6),
+      polls: (db.polls || [])
+        .filter((p: any) => (p.question || "").toLowerCase().includes(q))
+        .slice(0, 6)
     });
   });
 

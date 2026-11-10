@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Home, MessageCircle, Hash, Users, Network, CheckSquare, FolderKanban, Bell, Settings, Search, Moon, Sun, LogOut, Menu, ChevronsLeft, ChevronsRight, FlaskConical, Newspaper, CalendarDays, Volume2, VolumeX } from "lucide-react";
+import { Home, MessageCircle, Hash, Users, Network, CheckSquare, FolderKanban, Bell, Settings, Search, Moon, Sun, LogOut, Menu, ChevronsLeft, ChevronsRight, FlaskConical, Newspaper, CalendarDays, Volume2, VolumeX, HardDrive } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { Avatar, Logo, ROLE_NAMES } from "./common";
 import SearchDialog from "./SearchDialog";
@@ -15,7 +15,8 @@ const NAV = [
   { to: "/messages", icon: MessageCircle, label: "Messages", id: "messages" },
   { to: "/schedule", icon: CalendarDays, label: "Schedule", id: "schedule" },
   { to: "/groups", icon: Hash, label: "Groups", id: "groups" },
-  { to: "/people", icon: Users, label: "Directory", id: "directory" },
+  { to: "/directory", icon: HardDrive, label: "Directory", id: "directory" },
+  { to: "/employee", icon: Users, label: "Employee", id: "employee" },
   { to: "/org", icon: Network, label: "Organization", id: "org" },
   { to: "/tasks", icon: CheckSquare, label: "Tasks", id: "tasks" },
   { to: "/projects", icon: FolderKanban, label: "Projects", id: "projects" },

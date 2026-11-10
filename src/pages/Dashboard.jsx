@@ -29,7 +29,14 @@ import {
   Columns,
   Maximize2,
   Check,
-  Move
+  Move,
+  FolderKanban,
+  ShieldCheck,
+  Lock,
+  Globe,
+  Building2,
+  Pin,
+  Pencil
 } from "lucide-react";
 import { toast } from "sonner";
 import { useApp } from "../context/AppContext";
@@ -50,7 +57,8 @@ const DEFAULT_WIDGET_CONFIG = {
     tasks: true,
     messages: true,
     performance: true,
-    personnel: true
+    personnel: true,
+    drive_directory: true
   },
   gridStyle: "3col", // '3col' | '2col' | 'focus'
   density: "spacious" // 'spacious' | 'normal' | 'compact'
@@ -78,9 +86,20 @@ const WIDGET_LABELS = {
 };
 
 import { INITIAL_TASKS } from "../data/initialTasks";
+import {
+  getCachedDriveShortcuts,
+  setCachedDriveShortcuts,
+  hasShortcutAccess
+} from "../data/initialDriveShortcuts";
+import {
+  DriveIcon,
+  DriveShortcutDialog,
+  DriveAccessDialog,
+  GoogleDriveBrowserDialog
+} from "./Directory";
 
 export default function Dashboard() {
-  const { me, prefs, userMap, statuses, t, lang } = useApp();
+  const { me, prefs, users, userMap, statuses, t, lang, subscribe } = useApp();
   // Dashboard Data Caching & Hydration
   const [tasks, setTasks] = useState(() => {
     try {
@@ -121,6 +140,12 @@ export default function Dashboard() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  const [driveShortcuts, setDriveShortcuts] = useState(() => getCachedDriveShortcuts());
+  const [driveCatFilter, setDriveCatFilter] = useState("ALL");
+  const [shortcutDialogOpen, setShortcutDialogOpen] = useState(false);
+  const [editingShortcut, setEditingShortcut] = useState(null);
+  const [accessDialogShortcut, setAccessDialogShortcut] = useState(null);
+  const [driveBrowserOpen, setDriveBrowserOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [bgOpen, setBgOpen] = useState(false);
@@ -201,17 +226,22 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      const [tRes, mRes, pRes, cRes] = await Promise.all([
+      const [tRes, mRes, pRes, cRes, dRes] = await Promise.all([
         api.get("/tasks"),
         api.get("/meetings").catch(() => ({ data: [] })),
         api.get("/posts").catch(() => ({ data: [] })),
-        api.get("/conversations").catch(() => ({ data: [] }))
+        api.get("/conversations").catch(() => ({ data: [] })),
+        api.get("/drive-shortcuts").catch(() => ({ data: null }))
       ]);
 
       setTasks(tRes.data || []);
       setMeetings(mRes.data || []);
       setPosts(pRes.data || []);
       setConversations(cRes.data || []);
+      if (Array.isArray(dRes.data)) {
+        setDriveShortcuts(dRes.data);
+        setCachedDriveShortcuts(dRes.data);
+      }
 
       // Update Cache
       localStorage.setItem("circle_cache_tasks", JSON.stringify(tRes.data || []));
@@ -228,6 +258,74 @@ export default function Dashboard() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(
+    () =>
+      subscribe((evt) => {
+        if (evt.type === "drive_shortcuts:changed" && Array.isArray(evt.data)) {
+          setDriveShortcuts(evt.data);
+          setCachedDriveShortcuts(evt.data);
+        }
+      }),
+    [subscribe]
+  );
+
+  const humanUsers = (users || []).filter(
+    (u) => !u.is_bot && u.role !== "assistant" && u.user_id !== "user_circle_assistant"
+  );
+  const divisionsList = [...new Set(humanUsers.map((u) => u.department || "Lainnya"))].sort();
+
+  // Strictly filter shortcuts on Dashboard so ONLY shortcuts the current user has access to are shown
+  const accessibleDashboardShortcuts = driveShortcuts
+    .filter((s) => s.show_on_dashboard !== false && hasShortcutAccess(s, me))
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+
+  const dashboardDriveCategories = [
+    "ALL",
+    ...new Set(accessibleDashboardShortcuts.map((s) => s.category || "General"))
+  ];
+
+  const displayedDriveShortcuts = accessibleDashboardShortcuts.filter(
+    (s) => driveCatFilter === "ALL" || (s.category || "General") === driveCatFilter
+  );
+
+  const handleSaveDashboardShortcut = (payload) => {
+    setDriveShortcuts((prev) => {
+      const exists = prev.some((s) => s.id === payload.id);
+      let next;
+      if (exists) {
+        const updated = { ...payload, updated_at: new Date().toISOString() };
+        next = prev.map((s) => (s.id === payload.id ? updated : s));
+        api.patch(`/drive-shortcuts/${payload.id}`, updated).catch((e) => toast.error(errMsg(e)));
+        toast.success(`Shortcut "${payload.name}" berhasil diperbarui`);
+      } else {
+        const created = {
+          ...payload,
+          id: `drv_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          created_by: me?.user_id || "user_admin1",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        next = [created, ...prev];
+        api.post("/drive-shortcuts", created).catch((e) => toast.error(errMsg(e)));
+        toast.success(`Shortcut folder "${created.name}" berhasil ditambahkan`);
+      }
+      setCachedDriveShortcuts(next);
+      return next;
+    });
+  };
+
+  const handleSaveDashboardAccess = (shortcutId, patch) => {
+    setDriveShortcuts((prev) => {
+      const next = prev.map((s) =>
+        s.id === shortcutId ? { ...s, ...patch, updated_at: new Date().toISOString() } : s
+      );
+      setCachedDriveShortcuts(next);
+      return next;
+    });
+    toast.success("Akses member folder berhasil diperbarui");
+    api.patch(`/drive-shortcuts/${shortcutId}`, patch).catch((e) => toast.error(errMsg(e)));
+  };
 
   const toggleTaskDone = async (t, e) => {
     e.stopPropagation();
@@ -741,6 +839,191 @@ export default function Dashboard() {
             </button>
           </div>
         )}
+
+        {/* ============================================================ */}
+        {/* DIREKTORI SHORTCUT FOLDER GOOGLE DRIVE (FILTERED BY ACCESS)  */}
+        {/* ============================================================ */}
+        {widgetLayout.visible.drive_directory !== false && (
+          <div
+            className={`rounded-[28px] border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 ${densityStyles.cardPadding} shadow-[0_4px_24px_rgba(0,0,0,0.03)]`}
+            data-testid="dashboard-drive-directory"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 dark:border-slate-800 pb-5 mb-5">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
+                    <FolderKanban size={14} className="text-brand" />
+                    <span>Direktori Shortcut Google Drive</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                    <ShieldCheck size={13} /> Hanya Menampilkan Folder Akses Anda ({accessibleDashboardShortcuts.length})
+                  </span>
+                </div>
+                <p className="mt-1.5 text-xs sm:text-sm text-sub">
+                  Akses cepat ke folder Google Drive sesuai otorisasi akun Anda ({me?.name} · {me?.department || "Management"}).
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingShortcut(null);
+                    setShortcutDialogOpen(true);
+                  }}
+                  className="btn-accent inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-xs sm:text-sm font-bold text-white shadow-xs"
+                  data-testid="dashboard-add-drive-shortcut-btn"
+                >
+                  <Plus size={15} /> Tambah Shortcut
+                </button>
+                <Link
+                  to="/directory"
+                  className="inline-flex h-10 items-center gap-1 rounded-full border bg-surface px-4 text-xs sm:text-sm font-bold text-sub hover:text-ink transition-colors"
+                  data-testid="dashboard-open-directory-link"
+                >
+                  Kelola Direktori <ChevronRight size={14} />
+                </Link>
+              </div>
+            </div>
+
+            {/* Category Filter Pills (coral red active state matching other tabs) */}
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              {dashboardDriveCategories.map((cat) => {
+                const active = driveCatFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setDriveCatFilter(cat)}
+                    className={`h-9 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold transition-colors ${
+                      active
+                        ? "bg-brand text-white shadow-xs"
+                        : "border bg-surface text-sub hover:text-ink"
+                    }`}
+                  >
+                    {cat === "ALL" ? "Semua Folder Akses Saya" : cat}
+                  </button>
+                );
+              })}
+            </div>
+
+            {displayedDriveShortcuts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed bg-slate-50/70 dark:bg-slate-800/40 p-8 text-center">
+                <FolderKanban size={28} className="text-sub mb-2 opacity-60" />
+                <p className="text-sm font-bold text-ink">Belum ada shortcut folder untuk kategori ini</p>
+                <p className="text-xs text-sub mt-1 max-w-md">
+                  Tambahkan shortcut folder Google Drive baru atau atur hak akses member melalui halaman Direktori.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {displayedDriveShortcuts.map((s) => {
+                  const accentColor = s.color || "#FF5364";
+                  const cardStyle = s.card_style || "accent_top";
+                  const memberIds =
+                    s.access_type === "all"
+                      ? humanUsers.map((u) => u.user_id)
+                      : Array.from(
+                          new Set([
+                            ...(Array.isArray(s.allowed_user_ids) ? s.allowed_user_ids : []),
+                            ...(s.access_type === "department" && Array.isArray(s.allowed_departments)
+                              ? humanUsers
+                                  .filter((u) => s.allowed_departments.includes(u.department))
+                                  .map((u) => u.user_id)
+                              : [])
+                          ])
+                        );
+
+                  return (
+                    <div
+                      key={s.id}
+                      className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 p-5 transition-all hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm"
+                      style={{
+                        borderTopWidth: cardStyle === "accent_top" ? "4px" : undefined,
+                        borderTopColor: cardStyle === "accent_top" ? accentColor : undefined,
+                        backgroundColor: cardStyle === "soft_tint" ? `${accentColor}08` : undefined
+                      }}
+                      data-testid={`dashboard-drive-card-${s.id}`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white shadow-xs transition-transform group-hover:scale-105"
+                              style={{ backgroundColor: accentColor }}
+                            >
+                              <DriveIcon name={s.icon} size={20} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="truncate text-base font-bold text-ink">{s.name}</h4>
+                                {s.pinned && <Pin size={12} className="text-brand shrink-0 fill-current" />}
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                                <span className="rounded-full bg-surface2 px-2 py-0.5 font-semibold text-sub">
+                                  {s.category || "General"}
+                                </span>
+                                {s.badge && (
+                                  <span
+                                    className="rounded-full px-2 py-0.5 font-bold"
+                                    style={{ backgroundColor: `${accentColor}1A`, color: accentColor }}
+                                  >
+                                    {s.badge}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingShortcut(s);
+                              setShortcutDialogOpen(true);
+                            }}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border bg-surface text-sub hover:text-ink"
+                            title="Customize Shortcut"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        </div>
+
+                        <p className="mt-3 line-clamp-2 text-xs sm:text-sm text-sub leading-relaxed">
+                          {s.description || "Shortcut folder Google Drive terhubung langsung."}
+                        </p>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AvatarStack ids={memberIds} max={4} size={22} />
+                          <button
+                            type="button"
+                            onClick={() => setAccessDialogShortcut(s)}
+                            className="inline-flex items-center gap-1 text-xs font-bold text-sub hover:text-brand transition-colors truncate"
+                            title="Atur siapa saja member yang punya akses"
+                          >
+                            <ShieldCheck size={13} className="text-brand shrink-0" />
+                            <span>Atur Akses ({memberIds.length})</span>
+                          </button>
+                        </div>
+
+                        <a
+                          href={s.drive_url || "https://drive.google.com"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-accent inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold text-white shadow-xs shrink-0"
+                        >
+                          <span>Buka Folder</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ============================================================ */}
@@ -927,6 +1210,12 @@ export default function Dashboard() {
                   title: "Kapasitas & Beban Kerja Personel",
                   desc: "Kartu beban kerja anggota tim dan indikator tekanan",
                   icon: BarChart3
+                },
+                {
+                  key: "drive_directory",
+                  title: "Direktori Shortcut Google Drive",
+                  desc: "Tampilkan shortcut folder Google Drive sesuai hak akses Anda",
+                  icon: FolderKanban
                 }
               ].map((item) => {
                 const Icon = item.icon;
@@ -1004,6 +1293,48 @@ export default function Dashboard() {
       {selectedTaskId && (
         <TaskDetail id={selectedTaskId} onClose={() => setSelectedTaskId(null)} onChanged={loadData} />
       )}
+
+      {/* Drive Shortcut Customize & Member Access Dialogs */}
+      <DriveShortcutDialog
+        open={shortcutDialogOpen}
+        onOpenChange={setShortcutDialogOpen}
+        initialData={editingShortcut}
+        users={humanUsers}
+        divisions={divisionsList}
+        me={me}
+        onSave={handleSaveDashboardShortcut}
+        onOpenDriveBrowser={() => setDriveBrowserOpen(true)}
+      />
+      <DriveAccessDialog
+        open={!!accessDialogShortcut}
+        onOpenChange={(v) => !v && setAccessDialogShortcut(null)}
+        shortcut={accessDialogShortcut}
+        users={humanUsers}
+        divisions={divisionsList}
+        me={me}
+        onSaveAccess={handleSaveDashboardAccess}
+      />
+      <GoogleDriveBrowserDialog
+        open={driveBrowserOpen}
+        onOpenChange={setDriveBrowserOpen}
+        onSelectDriveFolder={(folderData) => {
+          setEditingShortcut({
+            name: folderData.name,
+            drive_folder_id: folderData.drive_folder_id,
+            drive_url: folderData.drive_url,
+            category: me?.department || "General",
+            badge: "Google Drive",
+            color: "#FF5364",
+            icon: "Folder",
+            pinned: true,
+            show_on_dashboard: true,
+            access_type: "custom",
+            allowed_departments: me?.department ? [me.department] : [],
+            allowed_user_ids: me?.user_id ? [me.user_id] : ["user_admin1"]
+          });
+          setShortcutDialogOpen(true);
+        }}
+      />
     </div>
   );
 }

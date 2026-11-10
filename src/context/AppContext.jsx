@@ -5,6 +5,7 @@ import { applyTheme, buildTheme } from "../lib/theme";
 import { getTranslation } from "../lib/i18n";
 import { playSound } from "../lib/sound";
 import { hydrateConversationsCache, appendMessageToCache, updateMessageInCache } from "../pages/chat/ChatView";
+import { setCachedDriveShortcuts } from "../data/initialDriveShortcuts";
 
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
@@ -76,12 +77,13 @@ export function AppProvider({ children }) {
   const prefs = useMemo(() => session?.prefs || {}, [session?.prefs]);
 
   const loadAll = useCallback(async () => {
-    const [u, l, n, c, t] = await Promise.all([
+    const [u, l, n, c, t, ds] = await Promise.all([
       api.get("/users").catch(() => ({ data: null })),
       api.get("/labels").catch(() => ({ data: null })),
       api.get("/notifications").catch(() => ({ data: null })),
       api.get("/conversations").catch(() => ({ data: null })),
-      api.get("/tasks").catch(() => ({ data: null }))
+      api.get("/tasks").catch(() => ({ data: null })),
+      api.get("/drive-shortcuts").catch(() => ({ data: null }))
     ]);
     if (Array.isArray(u.data) && u.data.length > 0) {
       setUsers(u.data);
@@ -106,6 +108,9 @@ export function AppProvider({ children }) {
         localStorage.setItem("circle_cache_tasks", JSON.stringify(t.data));
       } catch {}
     }
+    if (Array.isArray(ds.data)) {
+      setCachedDriveShortcuts(ds.data);
+    }
   }, []);
 
   const checkAuth = useCallback(async () => {
@@ -126,6 +131,9 @@ export function AppProvider({ children }) {
       if (Array.isArray(data.labels) && data.labels.length > 0) {
         setLabels(data.labels);
         try { localStorage.setItem("circle_labels_cache", JSON.stringify(data.labels)); } catch {}
+      }
+      if (Array.isArray(data.drive_shortcuts)) {
+        setCachedDriveShortcuts(data.drive_shortcuts);
       }
       try {
         localStorage.setItem("circle_session_cache", JSON.stringify(nextSession));
@@ -228,6 +236,9 @@ export function AppProvider({ children }) {
             setUsers(r.data);
             try { localStorage.setItem("circle_users_cache", JSON.stringify(r.data)); } catch {}
           }).catch(() => {});
+        }
+        if (evt.type === "drive_shortcuts:changed" && Array.isArray(evt.data)) {
+          setCachedDriveShortcuts(evt.data);
         }
         emit(evt);
       };

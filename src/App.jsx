@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Messages from "./pages/Messages";
 import Groups from "./pages/Groups";
 import Directory from "./pages/Directory";
+import Employees from "./pages/Employees";
 import Profile from "./pages/Profile";
 import Org from "./pages/Org";
 import Tasks from "./pages/Tasks";
@@ -57,7 +58,9 @@ function Router() {
         <Route path="/messages" element={<Messages />} />
         <Route path="/messages/:cid" element={<Messages />} />
         <Route path="/groups" element={<Groups />} />
-        <Route path="/people" element={<Directory />} />
+        <Route path="/directory" element={<Directory />} />
+        <Route path="/employee" element={<Employees />} />
+        <Route path="/people" element={<Employees />} />
         <Route path="/people/:uid" element={<Profile />} />
         <Route path="/org" element={<Org />} />
         <Route path="/tasks" element={<Tasks />} />

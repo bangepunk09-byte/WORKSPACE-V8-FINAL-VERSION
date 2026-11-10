@@ -8,6 +8,7 @@ export const DEFAULT_COPYWRITING = {
   nav_schedule: "Schedule",
   nav_groups: "Groups",
   nav_directory: "Directory",
+  nav_employee: "Employee",
   nav_org: "Organization",
   nav_tasks: "Tasks",
   nav_projects: "Projects",
