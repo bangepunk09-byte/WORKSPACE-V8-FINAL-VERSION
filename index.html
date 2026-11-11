@@ -2,6 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        // Suppress benign Vite HMR closed WebSocket error in AI Studio iframe environment
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event && (event.reason?.message || event.reason || '');
+          if (typeof reason === 'string' && (reason.indexOf('WebSocket closed without opened') !== -1 || reason.indexOf('failed to connect to websocket') !== -1)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        });
+        window.addEventListener('error', function(event) {
+          var msg = event && (event.message || '');
+          if (typeof msg === 'string' && (msg.indexOf('WebSocket closed without opened') !== -1 || msg.indexOf('failed to connect to websocket') !== -1)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+        var origError = console.error;
+        console.error = function() {
+          var text = Array.prototype.slice.call(arguments).join(' ');
+          if (text.indexOf('failed to connect to websocket') !== -1 || text.indexOf('WebSocket closed without opened') !== -1) {
+            return;
+          }
+          return origError.apply(console, arguments);
+        };
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#FF5364" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,25 +47,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet" />
-    <script>
-      (function() {
-        // Suppress expected Vite HMR WebSocket connection notices in iframe environment
-        window.addEventListener('unhandledrejection', function(event) {
-          var reason = event && (event.reason?.message || event.reason || '');
-          if (typeof reason === 'string' && (reason.indexOf('WebSocket closed without opened') !== -1 || reason.indexOf('failed to connect to websocket') !== -1)) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-          }
-        });
-        window.addEventListener('error', function(event) {
-          var msg = event && (event.message || '');
-          if (typeof msg === 'string' && (msg.indexOf('WebSocket closed without opened') !== -1 || msg.indexOf('failed to connect to websocket') !== -1)) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-          }
-        }, true);
-      })();
-    </script>
     <script>
       (function() {
         try {

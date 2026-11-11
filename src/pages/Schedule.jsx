@@ -43,8 +43,8 @@ export default function Schedule() {
     sync_gcal: true,
   });
 
-  const loadMeetings = async () => {
-    // 1. Instant load local workspace meetings
+  const loadMeetings = () => {
+    // 1. Instant load local workspace meetings (0ms)
     api.get("/meetings").then((res) => {
       if (Array.isArray(res.data)) {
         setMeetings(res.data);
@@ -52,9 +52,8 @@ export default function Schedule() {
       }
     }).catch(() => {});
 
-    // 2. Background sync GCal events without blocking UI
-    try {
-      const gcalRes = await listEvents();
+    // 2. Non-blocking background sync for Google Calendar events
+    listEvents().then((gcalRes) => {
       if (gcalRes?.items && Array.isArray(gcalRes.items)) {
         const gcalMeetings = gcalRes.items.map((ev) => {
           const startDateStr = (ev.start?.dateTime || ev.start?.date || "").slice(0, 10);
@@ -87,11 +86,11 @@ export default function Schedule() {
           return combined;
         });
       }
-    } catch (e) {
+    }).catch((e) => {
       console.warn("GCal background sync note:", e);
-    } finally {
+    }).finally(() => {
       setLoading(false);
-    }
+    });
   };
 
   useEffect(() => {
@@ -273,24 +272,25 @@ export default function Schedule() {
 
   const filteredMeetings = useMemo(() => {
     return meetings.filter((m) => {
+      if (viewMode === "date" && selectedDate) return m.date === selectedDate;
       if (viewMode === "today") return m.date === todayStr;
       if (viewMode === "upcoming") return m.date >= todayStr;
       return true;
     });
-  }, [meetings, viewMode, todayStr]);
+  }, [meetings, viewMode, selectedDate, todayStr]);
 
   // Generate 7-day mini calendar strip
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-rise" data-testid="schedule-page">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10" data-testid="schedule-page">
       <PageHeader
         icon={CalendarIcon}
         title={t("schedule_title")}
         subtitle={t("schedule_subtitle")}
         actions={
-          <AccentButton onClick={() => openCreateDialog()} data-testid="new-meeting-btn">
+          <AccentButton onClick={() => openCreateDialog(selectedDate)} data-testid="new-meeting-btn">
             <Plus size={16} />
             {t("schedule_new_meeting")}
           </AccentButton>
@@ -303,20 +303,23 @@ export default function Schedule() {
           <p className="text-sm font-bold text-ink">Minggu Ini</p>
           <div className="flex rounded-xl bg-surface2 p-1 text-xs">
             <button
-              onClick={() => setViewMode("all")}
-              className={`rounded-lg px-3 py-1 font-semibold transition-colors ${viewMode === "all" ? "bg-surface shadow text-ink" : "text-sub hover:text-ink"}`}
+              type="button"
+              onClick={() => { setViewMode("all"); setSelectedDate(null); }}
+              className={`rounded-lg px-3 py-1 font-semibold ${viewMode === "all" ? "bg-surface shadow text-ink" : "text-sub hover:text-ink"}`}
             >
               Semua
             </button>
             <button
-              onClick={() => setViewMode("today")}
-              className={`rounded-lg px-3 py-1 font-semibold transition-colors ${viewMode === "today" ? "bg-surface shadow text-ink" : "text-sub hover:text-ink"}`}
+              type="button"
+              onClick={() => { setViewMode("today"); setSelectedDate(todayStr); }}
+              className={`rounded-lg px-3 py-1 font-semibold ${viewMode === "today" ? "bg-surface shadow text-ink" : "text-sub hover:text-ink"}`}
             >
               Hari Ini
             </button>
             <button
-              onClick={() => setViewMode("upcoming")}
-              className={`rounded-lg px-3 py-1 font-semibold transition-colors ${viewMode === "upcoming" ? "bg-surface shadow text-ink" : "text-sub hover:text-ink"}`}
+              type="button"
+              onClick={() => { setViewMode("upcoming"); setSelectedDate(null); }}
+              className={`rounded-lg px-3 py-1 font-semibold ${viewMode === "upcoming" ? "bg-surface shadow text-ink" : "text-sub hover:text-ink"}`}
             >
               Mendatang
             </button>
@@ -332,11 +335,20 @@ export default function Schedule() {
 
             return (
               <button
+                type="button"
                 key={dateStr}
-                onClick={() => setSelectedDate(dateStr)}
-                className={`flex flex-col items-center justify-center rounded-2xl p-2.5 transition-all ${
+                onClick={() => {
+                  if (isSelected && viewMode === "date") {
+                    setViewMode("all");
+                    setSelectedDate(null);
+                  } else {
+                    setSelectedDate(dateStr);
+                    setViewMode("date");
+                  }
+                }}
+                className={`flex flex-col items-center justify-center rounded-2xl p-2.5 cursor-pointer active:scale-95 select-none ${
                   isSelected
-                    ? "bg-brand text-white shadow-md"
+                    ? "bg-brand text-white shadow-md font-bold"
                     : isToday
                     ? "bg-soft-blue text-blue-900 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-200"
                     : "bg-surface2 text-sub hover:text-ink hover:bg-surface2/80"
@@ -361,16 +373,25 @@ export default function Schedule() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-ink flex items-center gap-2">
-            <span>Daftar Pertemuan</span>
+            <span>
+              {viewMode === "date" && selectedDate
+                ? `Pertemuan: ${selectedDate === todayStr ? "Hari Ini" : selectedDate}`
+                : viewMode === "today"
+                ? "Pertemuan Hari Ini"
+                : viewMode === "upcoming"
+                ? "Pertemuan Mendatang"
+                : "Semua Pertemuan"}
+            </span>
             <span className="rounded-full bg-surface2 px-2.5 py-0.5 text-xs text-sub font-semibold">
               {filteredMeetings.length}
             </span>
           </h2>
           <button
-            onClick={() => openCreateDialog(selectedDate)}
+            type="button"
+            onClick={() => openCreateDialog(selectedDate || todayStr)}
             className="flex items-center gap-1 text-xs font-semibold text-brand hover:underline"
           >
-            <Plus size={13} /> Tambah untuk {selectedDate}
+            <Plus size={13} /> Tambah untuk {selectedDate || "Hari Ini"}
           </button>
         </div>
 

@@ -81,9 +81,29 @@ export function Calendar({ tasks, onOpen }) {
           <div key={`${format(d, "yyyy-MM-dd")}-${i}`} className={`min-h-[72px] border-b border-r p-1 sm:min-h-[104px] ${isSameMonth(d, month) ? "" : "bg-surface2 opacity-60"}`}>
             <p className={`mb-1 text-[11px] font-semibold ${isToday(d) ? "flex h-5 w-5 items-center justify-center rounded-full bg-brand text-white" : "text-sub"}`}>{format(d, "d")}</p>
             {list.slice(0, 3).map((item) => (
-              <button key={item.id} onClick={() => item.type === 'task' ? onOpen(item.id) : window.open(item.htmlLink, '_blank')} className="mb-0.5 block w-full truncate rounded-md px-1 py-0.5 text-left text-[10px] font-semibold" style={{ background: item.type === 'task' ? `color-mix(in srgb, ${colorOf(item, labelMap)} 18%, transparent)` : 'var(--c-accent1)', color: "var(--c-text)" }} data-testid={`calendar-item-${item.id}`}>
-                {item.type === 'event' && '📅 '} {item.title}
-              </button>
+              item.type === 'task' ? (
+                <button
+                  key={item.id}
+                  onClick={() => onOpen(item.id)}
+                  className="mb-0.5 block w-full truncate rounded-md px-1 py-0.5 text-left text-[10px] font-semibold"
+                  style={{ background: `color-mix(in srgb, ${colorOf(item, labelMap)} 18%, transparent)`, color: "var(--c-text)" }}
+                  data-testid={`calendar-item-${item.id}`}
+                >
+                  {item.title}
+                </button>
+              ) : (
+                <a
+                  key={item.id}
+                  href={item.htmlLink || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mb-0.5 block w-full truncate rounded-md px-1 py-0.5 text-left text-[10px] font-semibold"
+                  style={{ background: 'var(--c-accent1)', color: "var(--c-text)" }}
+                  data-testid={`calendar-item-${item.id}`}
+                >
+                  📅 {item.title}
+                </a>
+              )
             ))}
             {list.length > 3 && <p className="text-[10px] text-sub">+{list.length - 3} more</p>}
           </div>); })}
