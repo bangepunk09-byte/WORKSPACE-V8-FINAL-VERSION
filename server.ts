@@ -369,6 +369,16 @@ async function startServer() {
     });
   }
 
+  // Ensure all projects calculate progress strictly from real task data
+  if (Array.isArray(db.projects)) {
+    db.projects.forEach((p: any) => {
+      const pTasks = (db.tasks || []).filter((t: any) => t.project_id === p.id);
+      p.task_total = pTasks.length;
+      p.task_done = pTasks.filter((t: any) => t.status === "done").length;
+      p.progress = p.task_total > 0 ? Math.round((p.task_done / p.task_total) * 100) : 0;
+    });
+  }
+
   // Helper for color contrast
   function isDarkColor(hex: string): boolean {
     if (!hex || typeof hex !== 'string') return false;
@@ -2206,7 +2216,7 @@ async function startServer() {
       const tasks = db.tasks.filter((t: any) => t.project_id === p.id);
       const task_done = tasks.filter((t: any) => t.status === "done").length;
       const task_total = tasks.length;
-      const progress = task_total > 0 ? Math.round((task_done / task_total) * 100) : (p.progress || 0);
+      const progress = task_total > 0 ? Math.round((task_done / task_total) * 100) : 0;
       return {
         ...p,
         member_ids: p.member_ids || [],
@@ -2226,7 +2236,7 @@ async function startServer() {
     const tasks = db.tasks.filter((t: any) => t.project_id === p.id);
     const task_done = tasks.filter((t: any) => t.status === "done").length;
     const task_total = tasks.length;
-    const progress = task_total > 0 ? Math.round((task_done / task_total) * 100) : (p.progress || 0);
+    const progress = task_total > 0 ? Math.round((task_done / task_total) * 100) : 0;
     res.json({
       ...p,
       member_ids: p.member_ids || [],

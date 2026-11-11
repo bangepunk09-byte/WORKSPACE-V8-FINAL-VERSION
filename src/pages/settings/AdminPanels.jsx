@@ -683,7 +683,7 @@ function ColorSwatch({ value, onSave, testid }) {
   const [c, setC] = useState(value);
   const timer = useRef(null);
   useEffect(() => { setC(value); }, [value]);
-  const change = (v) => { setC(v); clearTimeout(timer.current); timer.current = setTimeout(() => v.toLowerCase() !== value.toLowerCase() && onSave(v), 600); };
+  const change = (v) => { setC(v); clearTimeout(timer.current); timer.current = setTimeout(() => v.toLowerCase() !== value.toLowerCase() && onSave(v), 200); };
   return <input type="color" value={c} onChange={(e) => change(e.target.value)} className="h-8 w-8" aria-label="Warna item" data-testid={testid} />;
 }
 

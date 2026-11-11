@@ -61,7 +61,7 @@ export function TaskCard({ t, onOpen, done, draggable, onDragStart, onDragEnd, i
     } catch (err) {
       toast.error(errMsg(err, "Gagal menyegarkan task"));
     } finally {
-      setTimeout(() => setRefreshing(false), 600);
+      setRefreshing(false);
     }
   };
 

@@ -44,7 +44,7 @@ export default function SearchDialog({ open, onOpenChange }) {
           setRes(r.data);
         }
       }).catch(() => {});
-    }, 80);
+    }, 20);
     return () => clearTimeout(t);
   }, [q]);
   const go = (path) => { onOpenChange(false); setQ(""); navigate(path); };

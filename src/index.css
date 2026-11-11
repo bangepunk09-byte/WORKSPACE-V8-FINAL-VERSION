@@ -90,75 +90,72 @@ select option {
 .btn-ghost:hover { background: var(--c-surface2); }
 .btn-ghost:active { transform: scale(.98); transition-duration: 100ms; }
 
-/* 1. MAIN NAVIGATION & WORKSPACE PAGES — INSTANT CROSSFADE (50ms) */
+/* 1. MAIN NAVIGATION & WORKSPACE PAGES — INSTANT (0ms DELAY) */
 .animate-page-enter,
 .animate-crossfade,
 .animate-rise {
-  animation: main-crossfade 50ms ease-out both;
+  animation: none !important;
 }
 
-/* 2. SUBPAGE NAVIGATION — INSTANT REVEAL (60ms) */
+/* 2. SUBPAGE NAVIGATION — INSTANT (0ms DELAY) */
 .animate-subpage-enter {
-  animation: subpage-reveal 60ms ease-out both;
+  animation: none !important;
 }
 
-/* 3. TASK DETAIL — INSTANT REVEAL (60ms) */
+/* 3. TASK DETAIL — INSTANT (0ms DELAY) */
 .animate-task-reveal {
-  animation: task-reveal 60ms ease-out both;
+  animation: none !important;
 }
 
-/* 4. MODAL & DIALOG — FAST SCALE (70ms) */
+/* 4. MODAL & DIALOG — SNAPPY INSTANT (30ms) */
 .animate-modal-enter {
-  animation: modal-enter 70ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: modal-enter 30ms cubic-bezier(0, 0, 0.2, 1) both;
 }
 
-/* 5. DROPDOWN & POPOVER — INSTANT REVEAL (60ms) */
+/* 5. DROPDOWN & POPOVER — SNAPPY INSTANT (30ms) */
 .animate-popover-enter {
-  animation: popover-enter 60ms ease-out both;
+  animation: popover-enter 30ms cubic-bezier(0, 0, 0.2, 1) both;
 }
 
-/* 6. CALENDAR & VIEW SWITCHING — INSTANT CROSSFADE (50ms) */
+/* 6. CALENDAR & VIEW SWITCHING — INSTANT (0ms DELAY) */
 .animate-view-crossfade,
-.animate-tab-in {
-  animation: view-crossfade 50ms ease-out both;
+.animate-tab-in,
+.animate-card-fade {
+  animation: none !important;
 }
 
 @keyframes main-crossfade {
-  0% { opacity: 0.92; }
+  0% { opacity: 1; }
   100% { opacity: 1; }
 }
 
 @keyframes subpage-reveal {
-  0% { opacity: 0.92; transform: translateY(2px); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% { opacity: 1; }
+  100% { opacity: 1; }
 }
 
 @keyframes task-reveal {
-  0% { opacity: 0.95; transform: translateY(2px); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% { opacity: 1; }
+  100% { opacity: 1; }
 }
 
 @keyframes modal-enter {
-  0% { opacity: 0.92; transform: scale(0.99); }
+  0% { opacity: 0.96; transform: scale(0.995); }
   100% { opacity: 1; transform: scale(1); }
 }
 
 @keyframes popover-enter {
-  0% { opacity: 0.92; transform: translateY(-2px); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% { opacity: 0.96; }
+  100% { opacity: 1; }
 }
 
 @keyframes card-fade-in {
-  0% { opacity: 0.95; transform: scale(0.995); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
-.animate-card-fade {
-  animation: card-fade-in 60ms ease-out forwards;
+  0% { opacity: 1; }
+  100% { opacity: 1; }
 }
 
 @keyframes view-crossfade {
-  0% { opacity: 0.92; }
+  0% { opacity: 1; }
   100% { opacity: 1; }
 }
 

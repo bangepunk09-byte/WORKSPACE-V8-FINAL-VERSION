@@ -281,7 +281,7 @@ export default function ChatView({ cid, onChange }) {
     // Instant client-side search first
     const localMatches = (Array.isArray(msgs) ? msgs : []).filter((m) => (m.text || "").toLowerCase().includes(qLower));
     setResults(localMatches);
-    const t = setTimeout(() => api.get(`/conversations/${cid}/messages`, { params: { q: search } }).then((r) => setResults(Array.isArray(r.data) ? r.data : [])), 120);
+    const t = setTimeout(() => api.get(`/conversations/${cid}/messages`, { params: { q: search } }).then((r) => setResults(Array.isArray(r.data) ? r.data : [])), 20);
     return () => clearTimeout(t);
   }, [search, cid]);
 

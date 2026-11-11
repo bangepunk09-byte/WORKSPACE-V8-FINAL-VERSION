@@ -120,7 +120,7 @@ function Detail({ pid }) {
           </div>
           <div className="flex gap-2">{activeP.conversation_id && <button onClick={() => navigate(`/messages/${activeP.conversation_id}`)} className="btn-ghost flex h-10 items-center gap-1.5 border px-4 text-sm font-semibold" data-testid="project-chat-btn"><MessageCircle size={15} />Chat</button>}<button onClick={() => setEdit(true)} className="btn-ghost h-10 border px-4 text-sm font-semibold" data-testid="project-edit-btn">Edit</button></div>
         </div>
-        <div className="mt-5"><div className="flex justify-between text-sm"><span className="font-semibold">Progress</span><span data-testid="project-progress">{activeP.task_done || 0}/{activeP.task_total || 0} tasks · {activeP.progress || 0}%</span></div><div className="mt-2 h-2.5 rounded-full bg-surface2"><div className="h-full rounded-full bg-brand transition-all" style={{ width: `${activeP.progress || 0}%` }} /></div></div>
+        <div className="mt-5"><div className="flex justify-between text-sm"><span className="font-semibold">Progress</span><span data-testid="project-progress">{activeP.task_done || 0}/{activeP.task_total || 0} tasks · {(activeP.task_total || 0) > 0 ? (activeP.progress || 0) : 0}%</span></div><div className="mt-2 h-2.5 rounded-full bg-surface2"><div className="h-full rounded-full bg-brand transition-all" style={{ width: `${(activeP.task_total || 0) > 0 ? (activeP.progress || 0) : 0}%` }} /></div></div>
         <div className="mt-4"><AvatarStack ids={activeP.member_ids || []} max={8} /></div>
       </div>
       <TaskWorkspace projectId={pid} compactHeader />
@@ -164,16 +164,21 @@ export default function Projects() {
         <PageHeader icon={FolderKanban} title="Projects" subtitle="Progress is calculated from real task data." actions={<AccentButton onClick={() => setOpen(true)} data-testid="new-project-btn"><Plus size={16} />New project</AccentButton>} />
         {!list.length ? <Empty icon={FolderKanban} title="No projects yet" /> : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {list.map((p, i) => (
-              <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>
-                <div className="flex items-center justify-between"><span className="h-10 w-10 rounded-2xl" style={{ background: `linear-gradient(135deg, ${p.color || "#FF5364"}, var(--c-accent2))` }} /><span className="rounded-full bg-surface2 px-2.5 py-1 text-[11px] font-semibold capitalize">{(p.status || "active").replace("_", " ")}</span></div>
-                <p className="mt-4 font-bold">{p.name}</p><p className="mt-1 line-clamp-2 text-sm text-sub">{p.description}</p>
-                <div className="mt-3"><Labels ids={p.label_ids || []} small /></div>
-                <div className="mt-4 flex justify-between text-xs text-sub"><span>{p.task_done || 0}/{p.task_total || 0} tasks</span><span className="font-semibold text-ink">{p.progress || 0}%</span></div>
-                <div className="mt-1.5 h-1.5 rounded-full bg-surface2"><div className="h-full rounded-full bg-brand" style={{ width: `${p.progress || 0}%` }} /></div>
-                <div className="mt-4"><AvatarStack ids={p.member_ids || []} /></div>
-              </button>
-            ))}
+            {list.map((p, i) => {
+              const taskDone = p.task_done || 0;
+              const taskTotal = p.task_total || 0;
+              const progressPct = taskTotal > 0 ? (p.progress ?? Math.round((taskDone / taskTotal) * 100)) : 0;
+              return (
+                <button key={p.id || i} onClick={() => navigate(`/projects/${p.id}`)} className="card p-5 text-left transition-transform hover:-translate-y-0.5" data-testid={`project-card-${p.id}`}>
+                  <div className="flex items-center justify-between"><span className="h-10 w-10 rounded-2xl" style={{ background: `linear-gradient(135deg, ${p.color || "#FF5364"}, var(--c-accent2))` }} /><span className="rounded-full bg-surface2 px-2.5 py-1 text-[11px] font-semibold capitalize">{(p.status || "active").replace("_", " ")}</span></div>
+                  <p className="mt-4 font-bold">{p.name}</p><p className="mt-1 line-clamp-2 text-sm text-sub">{p.description}</p>
+                  <div className="mt-3"><Labels ids={p.label_ids || []} small /></div>
+                  <div className="mt-4 flex justify-between text-xs text-sub"><span>{taskDone}/{taskTotal} tasks</span><span className="font-semibold text-ink">{progressPct}%</span></div>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-surface2"><div className="h-full rounded-full bg-brand" style={{ width: `${progressPct}%` }} /></div>
+                  <div className="mt-4"><AvatarStack ids={p.member_ids || []} /></div>
+                </button>
+              );
+            })}
           </div>
         )}
         <ProjectDialog open={open} onOpenChange={setOpen} onSaved={(d) => navigate(`/projects/${d.id}`)} />

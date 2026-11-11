@@ -16,7 +16,7 @@ const DEFAULT_USERS = [
 ];
 
 try {
-  if (typeof window !== "undefined" && localStorage.getItem("circle_prod_clean_v3") !== "1") {
+  if (typeof window !== "undefined" && localStorage.getItem("circle_prod_clean_v4") !== "1") {
     const keysToClear = [
       "circle_tasks_cache",
       "circle_cache_tasks",
@@ -38,7 +38,7 @@ try {
       "circle_session_cache"
     ];
     keysToClear.forEach((k) => localStorage.removeItem(k));
-    localStorage.setItem("circle_prod_clean_v3", "1");
+    localStorage.setItem("circle_prod_clean_v4", "1");
   }
 } catch {}
 

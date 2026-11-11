@@ -292,7 +292,7 @@
       "name": "Enterprise Workspace Migration",
       "description": "Migrasi sistem kolaborasi internal ASLI RI ke platform terpadu.",
       "status": "active",
-      "progress": 60,
+      "progress": 0,
       "owner_id": "user_admin1",
       "member_ids": [
         "user_admin1",
@@ -301,7 +301,9 @@
       "label_ids": [
         "lbl_1",
         "lbl_2"
-      ]
+      ],
+      "task_done": 0,
+      "task_total": 0
     }
   ],
   "boards": [

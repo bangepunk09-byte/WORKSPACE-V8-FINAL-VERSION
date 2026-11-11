@@ -327,25 +327,23 @@ export default function Dashboard() {
     api.patch(`/drive-shortcuts/${shortcutId}`, patch).catch((e) => toast.error(errMsg(e)));
   };
 
-  const toggleTaskDone = async (t, e) => {
+  const toggleTaskDone = (t, e) => {
     e.stopPropagation();
     const isDone = t.status === "done";
     const nextStatus = isDone ? "in_progress" : "done";
-    try {
-      if (!isDone) {
-        playSound("task_done");
-      } else {
-        playSound("click");
-      }
-      setTasks((prev) =>
-        prev.map((item) => (item.id === t.id ? { ...item, status: nextStatus, progress: !isDone ? 100 : 50 } : item))
-      );
-      await api.patch(`/tasks/${t.id}`, { status: nextStatus });
-      toast.success(isDone ? `Tugas dikembalikan ke In Progress` : `Tugas selesai! (100%)`);
-    } catch (err) {
+    if (!isDone) {
+      playSound("task_done");
+    } else {
+      playSound("click");
+    }
+    setTasks((prev) =>
+      prev.map((item) => (item.id === t.id ? { ...item, status: nextStatus, progress: !isDone ? 100 : 50 } : item))
+    );
+    toast.success(isDone ? `Tugas dikembalikan ke In Progress` : `Tugas selesai! (100%)`);
+    api.patch(`/tasks/${t.id}`, { status: nextStatus }).catch((err) => {
       toast.error(errMsg(err));
       loadData();
-    }
+    });
   };
 
   const handleReactionClick = (emoji) => {
@@ -446,9 +444,7 @@ export default function Dashboard() {
 
         {/* Cards List */}
         <div className={densityStyles.itemSpacing}>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-emerald-500" /></div>
-          ) : displayMeetings.length === 0 ? (
+          {displayMeetings.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed">
               <CalendarDays size={24} className="text-sub mb-2 opacity-50" />
               <p className="text-xs font-semibold text-ink">Tidak ada meeting hari ini</p>
@@ -545,9 +541,7 @@ export default function Dashboard() {
 
         {/* Tasks List */}
         <div className={densityStyles.itemSpacing}>
-          {loading ? (
-            <div className="flex h-32 items-center justify-center"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-amber-500" /></div>
-          ) : todayTasks.length === 0 ? (
+          {todayTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-dashed">
               <CheckSquare size={24} className="text-sub mb-2 opacity-50" />
               <p className="text-xs font-semibold text-ink">Semua tugas selesai</p>
@@ -656,9 +650,7 @@ export default function Dashboard() {
         </div>
 
         {/* Feed Card: Latest Post or Empty State */}
-        {loading ? (
-            <div className="flex h-32 items-center justify-center"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-purple-500" /></div>
-        ) : posts.length === 0 ? (
+        {posts.length === 0 ? (
           <div className={`rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 ${densityStyles.itemPadding} text-center py-6`}>
             <MessageSquare size={22} className="mx-auto text-sub mb-2 opacity-50" />
             <p className="text-xs font-semibold text-ink">Belum ada postingan di Feed</p>

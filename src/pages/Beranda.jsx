@@ -44,12 +44,47 @@ function Composer({ parentId, onPosted, placeholder }) {
   };
   const submit = async (poll) => {
     if (busy || (!poll && !text.trim() && !files.length)) return;
-    setBusy(true);
+    const currentText = text;
+    const currentFiles = [...files];
+    const currentMentions = [...mentions];
+    const tempId = `pst_opt_${Date.now()}`;
+    const optimisticPost = {
+      id: tempId,
+      author_id: me?.user_id || "user_admin1",
+      text: currentText,
+      poll_id: poll?.id || null,
+      parent_id: parentId || null,
+      attachments: currentFiles.map((f) => ({ id: f.id, name: f.name })),
+      mention_ids: currentMentions.filter((m) => currentText.includes(`@${userMap[m]?.name}`)),
+      likes: [],
+      like_count: 0,
+      liked: false,
+      reactions: {},
+      reply_count: 0,
+      replies_preview: [],
+      created_at: new Date().toISOString()
+    };
+
+    // Optimistically update UI immediately (0ms delay)
+    setText("");
+    setFiles([]);
+    setMentions([]);
+    onPosted?.(optimisticPost);
+
     try {
-      const { data } = await api.post("/posts", { text, poll: poll || undefined, parent_id: parentId || null, attachments: files.map((f) => ({ id: f.id })), mention_ids: mentions.filter((m) => text.includes(`@${userMap[m]?.name}`)) });
-      setText(""); setFiles([]); setMentions([]); onPosted?.(data);
-    } catch (er) { setBusy(false); throw er; }
-    setBusy(false);
+      const { data } = await api.post("/posts", {
+        text: currentText,
+        poll: poll || undefined,
+        parent_id: parentId || null,
+        attachments: currentFiles.map((f) => ({ id: f.id })),
+        mention_ids: currentMentions.filter((m) => currentText.includes(`@${userMap[m]?.name}`))
+      });
+      if (data) {
+        onPosted?.(data, tempId);
+      }
+    } catch (er) {
+      toast.error(errMsg(er));
+    }
   };
   const send = () => submit().catch((er) => toast.error(errMsg(er)));
   const ta = useRef(null);
@@ -79,7 +114,28 @@ function Composer({ parentId, onPosted, placeholder }) {
 
 function Reactions({ p, onChange }) {
   const { me } = useApp();
-  const react = (emoji) => api.post(`/posts/${p.id}/react`, { emoji }).then((r) => onChange(r.data)).catch((e) => toast.error(errMsg(e)));
+  const react = (emoji) => {
+    // 100% Optimistic reaction toggle (0ms latency)
+    const currentList = p.reactions?.[emoji] || [];
+    const hasReacted = currentList.includes(me.user_id);
+    const nextList = hasReacted ? currentList.filter((id) => id !== me.user_id) : [...currentList, me.user_id];
+    const nextReactions = { ...(p.reactions || {}) };
+    if (nextList.length) {
+      nextReactions[emoji] = nextList;
+    } else {
+      delete nextReactions[emoji];
+    }
+    const nextP = { ...p, reactions: nextReactions };
+    onChange(nextP);
+
+    api.post(`/posts/${p.id}/react`, { emoji }).then((r) => {
+      if (r.data) onChange(r.data);
+    }).catch((e) => {
+      onChange(p); // rollback on error
+      toast.error(errMsg(e));
+    });
+  };
+
   const list = Object.entries(p.reactions || {}).filter(([, ids]) => ids.length);
   return (
     <>
@@ -94,8 +150,35 @@ function PostCard({ p, onChange, onDelete, reply }) {
   const { me, userMap, isAdmin } = useApp();
   const navigate = useNavigate();
   const author = userMap[p.author_id];
-  const like = () => api.post(`/posts/${p.id}/like`).then((r) => onChange(r.data)).catch((e) => toast.error(errMsg(e)));
-  const del = () => window.confirm("Hapus postingan ini?") && api.delete(`/posts/${p.id}`).then(() => onDelete(p.id)).catch((e) => toast.error(errMsg(e)));
+
+  const like = () => {
+    // 100% Optimistic like toggle (0ms latency)
+    const willLike = !p.liked;
+    const nextP = {
+      ...p,
+      liked: willLike,
+      like_count: willLike ? (p.like_count || 0) + 1 : Math.max(0, (p.like_count || 0) - 1),
+      likes: willLike
+        ? [...(p.likes || []).filter((id) => id !== me.user_id), me.user_id]
+        : (p.likes || []).filter((id) => id !== me.user_id)
+    };
+    onChange(nextP);
+
+    api.post(`/posts/${p.id}/like`).then((r) => {
+      if (r.data) onChange(r.data);
+    }).catch((e) => {
+      onChange(p); // rollback on error
+      toast.error(errMsg(e));
+    });
+  };
+
+  const del = () => {
+    if (window.confirm("Hapus postingan ini?")) {
+      onDelete(p.id);
+      api.delete(`/posts/${p.id}`).catch((e) => toast.error(errMsg(e)));
+    }
+  };
+
   return (
     <article className={`flex gap-3 ${reply ? "py-4" : "card p-4"}`} data-testid={`post-${p.id}`}>
       <Link to={`/people/${p.author_id}`} className="shrink-0"><Avatar user={author} size={reply ? 34 : 42} /></Link>
@@ -122,10 +205,8 @@ function PostCard({ p, onChange, onDelete, reply }) {
 }
 
 const DEFAULT_TRENDING = [
-  { tag: "welcome", count: 3 },
-  { tag: "sprint", count: 2 },
-  { tag: "engineering", count: 1 },
-  { tag: "design", count: 1 }
+  { tag: "welcome", count: 1 },
+  { tag: "update", count: 1 }
 ];
 
 const DEFAULT_POSTS = [
@@ -134,13 +215,13 @@ const DEFAULT_POSTS = [
     author_id: "user_admin1",
     text: "Selamat datang di workspace internal ASLI RI! 🎉 Silakan gunakan Beranda ini untuk update info, obrolan santai, atau diskusi lintas divisi. Jangan ragu menyematkan #welcome dan #update.",
     attachments: [],
-    likes: ["user_admin1", "user_superadmin_saeful"],
-    like_count: 2,
-    liked: true,
-    reactions: { "🎉": ["user_superadmin_saeful"], "👍": ["user_admin1"] },
+    likes: [],
+    like_count: 0,
+    liked: false,
+    reactions: { "👍": ["user_admin1"] },
     reply_count: 0,
     replies_preview: [],
-    created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+    created_at: new Date(Date.now() - 3600000 * 24).toISOString()
   }
 ];
 
@@ -156,7 +237,6 @@ try {
 function Trending({ compact }) {
   const { subscribe } = useApp();
   const [items, setItems] = useState(TRENDING_CACHE);
-  const [loading, setLoading] = useState(!TRENDING_CACHE.length);
   const [params] = useSearchParams();
   const active = params.get("tag");
 
@@ -165,13 +245,11 @@ function Trending({ compact }) {
       .then((r) => {
         if (Array.isArray(r.data)) {
           setItems(r.data);
-          localStorage.setItem("circle_cache_trending", JSON.stringify(r.data));
+          TRENDING_CACHE = r.data;
+          try { localStorage.setItem("circle_cache_trending", JSON.stringify(r.data)); } catch {}
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -200,18 +278,14 @@ function Trending({ compact }) {
   }
 
   return (
-    <div className="card p-4 transition-all duration-200" data-testid="trending-panel">
+    <div className="card p-4" data-testid="trending-panel">
       <h3 className="flex items-center gap-2 font-bold text-ink">
         <TrendingUp size={17} className="text-brand" />
         Trending
       </h3>
       <p className="mb-3 text-xs text-sub">Hashtag paling ramai 7 hari terakhir</p>
 
-      {loading && !displayItems.length ? (
-        <div className="flex h-20 items-center justify-center">
-          <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-brand" />
-        </div>
-      ) : !displayItems.length ? (
+      {!displayItems.length ? (
         <p className="text-sm text-sub" data-testid="trending-empty">
           Belum ada hashtag. Coba tulis #namatopik di postinganmu.
         </p>
@@ -266,7 +340,7 @@ function Feed() {
           setMore(r.data.length === 30);
           if (!tag) {
             POSTS_CACHE = r.data;
-            localStorage.setItem("circle_cache_posts_feed", JSON.stringify(r.data));
+            try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(r.data)); } catch {}
           }
         }
       })
@@ -290,7 +364,33 @@ function Feed() {
         setMore(r.data.length === 30);
       });
 
-  const upd = (np) => setPosts((ps) => ps.map((x) => (x.id === np.id ? { ...x, ...np } : x)));
+  const upd = (np) => {
+    setPosts((ps) => {
+      const next = ps.map((x) => (x.id === np.id ? { ...x, ...np } : x));
+      if (!tag) {
+        POSTS_CACHE = next;
+        try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
+      }
+      return next;
+    });
+  };
+
+  const handlePosted = (newPost, replaceId) => {
+    setPosts((ps) => {
+      const existing = ps || [];
+      let next;
+      if (replaceId) {
+        next = existing.map((x) => (x.id === replaceId ? newPost : x));
+      } else {
+        next = [newPost, ...existing.filter((x) => x.id !== newPost.id)];
+      }
+      if (!tag) {
+        POSTS_CACHE = next;
+        try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
+      }
+      return next;
+    });
+  };
 
   return (
     <>
@@ -310,7 +410,7 @@ function Feed() {
             </button>
           </div>
         )}
-        <Composer onPosted={(p) => setPosts((ps) => [p, ...(ps || []).filter((x) => x.id !== p.id)])} />
+        <Composer onPosted={handlePosted} />
         {!posts.length ? (
           <p className="py-10 text-center text-sm text-sub" data-testid="feed-empty">
             {tag ? `Belum ada postingan dengan #${tag}.` : "Belum ada postingan. Jadilah yang pertama!"}
@@ -321,7 +421,16 @@ function Feed() {
               key={p.id}
               p={p}
               onChange={upd}
-              onDelete={(id) => setPosts((ps) => ps.filter((x) => x.id !== id))}
+              onDelete={(id) => {
+                setPosts((ps) => {
+                  const next = ps.filter((x) => x.id !== id);
+                  if (!tag) {
+                    POSTS_CACHE = next;
+                    try { localStorage.setItem("circle_cache_posts_feed", JSON.stringify(next)); } catch {}
+                  }
+                  return next;
+                });
+              }}
             />
           ))
         )}
