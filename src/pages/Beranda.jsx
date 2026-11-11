@@ -172,11 +172,11 @@ function PostCard({ p, onChange, onDelete, reply }) {
     });
   };
 
-  const del = () => {
-    if (window.confirm("Hapus postingan ini?")) {
-      onDelete(p.id);
-      api.delete(`/posts/${p.id}`).catch((e) => toast.error(errMsg(e)));
-    }
+  const del = (e) => {
+    e?.stopPropagation?.();
+    onDelete(p.id);
+    toast.success("Postingan dihapus");
+    api.delete(`/posts/${p.id}`).catch((err) => toast.error(errMsg(err)));
   };
 
   return (

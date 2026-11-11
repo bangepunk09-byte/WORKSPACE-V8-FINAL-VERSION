@@ -2885,6 +2885,8 @@ async function startServer() {
       }
     }
 
+    broadcast({ type: "posts:changed" });
+    broadcast({ type: "post:new", data: newPost });
     res.json(newPost);
   });
 
@@ -2914,6 +2916,7 @@ async function startServer() {
 
   app.delete("/api/posts/:id", (req, res) => {
     db.posts = db.posts.filter((p: any) => p.id !== req.params.id && p.parent_id !== req.params.id);
+    broadcast({ type: "posts:changed" });
     res.json({ success: true });
   });
 
@@ -2930,6 +2933,7 @@ async function startServer() {
       p.liked = true;
     }
     p.like_count = p.likes.length;
+    broadcast({ type: "posts:changed" });
     res.json(p);
   });
 
@@ -2946,6 +2950,7 @@ async function startServer() {
     } else {
       p.reactions[emoji].push(uid);
     }
+    broadcast({ type: "posts:changed" });
     res.json(p);
   });
 
@@ -4254,7 +4259,7 @@ async function startServer() {
   // Setup Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);

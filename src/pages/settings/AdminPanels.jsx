@@ -453,6 +453,18 @@ export function WorkspaceBranding() {
       toast.error(errMsg(er, "Gagal mengupload logo workspace"));
     }
   };
+  const favicon = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const up = await uploadFile(file);
+      await api.patch("/workspace", { favicon_file_id: up.id });
+      toast.success("Icon website (Favicon) berhasil diperbarui!");
+      reloadWs();
+    } catch (er) {
+      toast.error(errMsg(er, "Gagal mengupload favicon website"));
+    }
+  };
   const loginImg = async (e) => {
     const fl = e.target.files[0];
     if (!fl) return;
@@ -481,6 +493,54 @@ export function WorkspaceBranding() {
             {ws.logo_file_id && (
               <button onClick={() => run(() => api.patch("/workspace", { logo_file_id: null }), "Logo dihapus").then(reloadWs)} className="text-xs text-rose-500 hover:underline">
                 Hapus Logo Kustom
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Favicon (Icon Tab Website) Setting */}
+      <div className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border bg-surface2/50 p-4" data-testid="favicon-setting">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl border bg-surface p-2 shadow-xs">
+          {ws?.favicon_file_id ? (
+            <img
+              src={`/api/files/${ws.favicon_file_id}`}
+              alt="Favicon preview"
+              className="h-10 w-10 object-contain rounded-lg"
+              data-testid="favicon-preview"
+            />
+          ) : (
+            <img
+              src={ws?.logo_file_id ? `/api/files/${ws.logo_file_id}` : "/icon.svg"}
+              alt="Default icon"
+              className="h-10 w-10 object-contain rounded-lg"
+              data-testid="favicon-preview-default"
+            />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold">Icon Website (Favicon)</p>
+            <span className="rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-2 py-0.5 text-[10px] font-bold">
+              Browser Tab & PWA
+            </span>
+          </div>
+          <p className="text-xs text-sub mt-0.5">
+            Icon kecil yang muncul di tab browser, bookmark bar, dan shortcut home screen aplikasi. Format disarankan: PNG, SVG, atau ICO (persegi 1:1).
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <label className="cursor-pointer rounded-xl bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
+              Ubah Icon Website (Favicon)
+              <input type="file" accept="image/*,.ico,.svg" hidden onChange={favicon} data-testid="favicon-upload-input" />
+            </label>
+            {ws.favicon_file_id && (
+              <button
+                type="button"
+                onClick={() => run(() => api.patch("/workspace", { favicon_file_id: null }), "Favicon kustom dihapus, memakai logo default").then(reloadWs)}
+                className="text-xs text-sub hover:underline"
+                data-testid="favicon-reset-btn"
+              >
+                Gunakan Logo Workspace
               </button>
             )}
           </div>

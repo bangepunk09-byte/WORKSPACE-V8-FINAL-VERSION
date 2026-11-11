@@ -20,13 +20,14 @@ try {
 } catch {}
 
 export default function Schedule() {
-  const { me, users, userMap, t } = useApp();
+  const { me, users, userMap, t, subscribe } = useApp();
   const [meetings, setMeetings] = useState(MEETINGS_CACHE);
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [createOpen, setCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useState("all"); // "all", "today", "upcoming"
   const [submitting, setSubmitting] = useState(false);
+  const [deleteConfirmMeeting, setDeleteConfirmMeeting] = useState(null);
 
   // Form state
   const [form, setForm] = useState({
@@ -97,6 +98,34 @@ export default function Schedule() {
     loadMeetings();
   }, []);
 
+  useEffect(() => {
+    return subscribe?.((evt) => {
+      if (evt.type === "meeting:new" && evt.data) {
+        setMeetings((prev) => {
+          if (prev.some((m) => m.id === evt.data.id)) return prev;
+          const next = [...prev, evt.data];
+          next.sort((a, b) => new Date(`${a.date}T${a.start_time}`).getTime() - new Date(`${b.date}T${b.start_time}`).getTime());
+          try { localStorage.setItem("circle_meetings_cache", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
+      if (evt.type === "meeting:delete" && evt.id) {
+        setMeetings((prev) => {
+          const next = prev.filter((m) => m.id !== evt.id);
+          try { localStorage.setItem("circle_meetings_cache", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
+      if (evt.type === "meeting:update" && evt.data) {
+        setMeetings((prev) => {
+          const next = prev.map((m) => (m.id === evt.data.id ? { ...m, ...evt.data } : m));
+          try { localStorage.setItem("circle_meetings_cache", JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
+    });
+  }, [subscribe]);
+
   const openCreateDialog = (prefillDate) => {
     const d = prefillDate || new Date().toISOString().slice(0, 10);
     setForm({
@@ -114,89 +143,129 @@ export default function Schedule() {
     setCreateOpen(true);
   };
 
-  const handleCreateSubmit = async (e) => {
+  const handleCreateSubmit = (e) => {
     e.preventDefault();
     if (!form.title.trim()) {
       return toast.error("Judul meeting wajib diisi");
     }
 
-    setSubmitting(true);
-    let gcalSynced = false;
-    let gcalEventId = null;
-    let finalMeetLink = form.meet_link;
+    const tempId = `mtg_${Date.now()}`;
+    const newMeeting = {
+      id: tempId,
+      title: form.title,
+      description: form.description,
+      date: form.date,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      location: form.location,
+      meet_link: form.meet_link,
+      attendee_ids: form.attendee_ids,
+      gcal_synced: false,
+      gcal_event_id: null,
+      created_by: me?.user_id || "user_admin1",
+      created_at: new Date().toISOString()
+    };
 
-    if (form.sync_gcal) {
-      try {
-        const startIso = new Date(`${form.date}T${form.start_time}:00`).toISOString();
-        const endIso = new Date(`${form.date}T${form.end_time}:00`).toISOString();
-        const attendeesList = (form.attendee_ids || [])
-          .map((uid) => userMap[uid]?.email)
-          .filter(Boolean)
-          .map((email) => ({ email }));
+    // 100% Optimistic UI update (0ms delay)
+    setMeetings((prev) => {
+      const next = [...prev, newMeeting];
+      next.sort((a, b) => new Date(`${a.date}T${a.start_time}`).getTime() - new Date(`${b.date}T${b.start_time}`).getTime());
+      try { localStorage.setItem("circle_meetings_cache", JSON.stringify(next)); } catch {}
+      return next;
+    });
 
-        const gcalRes = await createEvent({
-          summary: form.title,
-          description: `${form.description || ""}\n\nCIRCLE Workspace Scheduled Meeting`,
-          location: form.location || "Google Meet",
-          start: { dateTime: startIso, timeZone: "Asia/Jakarta" },
-          end: { dateTime: endIso, timeZone: "Asia/Jakarta" },
-          attendees: attendeesList,
-        });
+    playSound("meeting");
+    toast.success("Jadwal meeting berhasil disimpan!");
+    setCreateOpen(false);
 
-        if (gcalRes && gcalRes.id) {
-          gcalSynced = true;
-          gcalEventId = gcalRes.id;
-          if (gcalRes.hangoutLink) {
-            finalMeetLink = gcalRes.hangoutLink;
+    // Background sync with API and GCal without blocking UI
+    (async () => {
+      let gcalSynced = false;
+      let gcalEventId = null;
+      let finalMeetLink = form.meet_link;
+
+      if (form.sync_gcal) {
+        try {
+          const startIso = new Date(`${form.date}T${form.start_time}:00`).toISOString();
+          const endIso = new Date(`${form.date}T${form.end_time}:00`).toISOString();
+          const attendeesList = (form.attendee_ids || [])
+            .map((uid) => userMap[uid]?.email)
+            .filter(Boolean)
+            .map((email) => ({ email }));
+
+          const gcalRes = await createEvent({
+            summary: form.title,
+            description: `${form.description || ""}\n\nCIRCLE Workspace Scheduled Meeting`,
+            location: form.location || "Google Meet",
+            start: { dateTime: startIso, timeZone: "Asia/Jakarta" },
+            end: { dateTime: endIso, timeZone: "Asia/Jakarta" },
+            attendees: attendeesList,
+          });
+
+          if (gcalRes && gcalRes.id) {
+            gcalSynced = true;
+            gcalEventId = gcalRes.id;
+            if (gcalRes.hangoutLink) {
+              finalMeetLink = gcalRes.hangoutLink;
+            }
           }
-          toast.success("Jadwal tersinkronisasi langsung ke Google Calendar! 📅");
+        } catch (err) {
+          console.warn("Direct Google Calendar sync note:", err);
+        }
+      }
+
+      try {
+        const payload = {
+          title: form.title,
+          description: form.description,
+          date: form.date,
+          start_time: form.start_time,
+          end_time: form.end_time,
+          location: form.location,
+          meet_link: finalMeetLink,
+          attendee_ids: form.attendee_ids,
+          gcal_synced: gcalSynced,
+          gcal_event_id: gcalEventId,
+        };
+
+        const res = await api.post("/meetings", payload);
+        if (res.data) {
+          setMeetings((prev) => {
+            const next = prev.map((m) => (m.id === tempId ? res.data : m));
+            try { localStorage.setItem("circle_meetings_cache", JSON.stringify(next)); } catch {}
+            return next;
+          });
         }
       } catch (err) {
-        console.warn("Direct Google Calendar sync note:", err);
+        toast.error(errMsg(err, "Gagal sinkronisasi meeting ke server"));
       }
-    }
-
-    try {
-      const payload = {
-        title: form.title,
-        description: form.description,
-        date: form.date,
-        start_time: form.start_time,
-        end_time: form.end_time,
-        location: form.location,
-        meet_link: finalMeetLink,
-        attendee_ids: form.attendee_ids,
-        gcal_synced: gcalSynced,
-        gcal_event_id: gcalEventId,
-      };
-
-      await api.post("/meetings", payload);
-      playSound("meeting");
-      toast.success("Jadwal meeting berhasil disimpan!");
-      setCreateOpen(false);
-      loadMeetings();
-    } catch (err) {
-      toast.error(errMsg(err, "Gagal membuat jadwal meeting"));
-    } finally {
-      setSubmitting(false);
-    }
+    })();
   };
 
-  const deleteMeeting = async (id, title, isGcal, e) => {
-    e.stopPropagation();
-    if (!window.confirm(`Hapus jadwal meeting "${title}"?`)) return;
-    if (isGcal) {
-      setMeetings((prev) => prev.filter((m) => m.id !== id));
-      toast.success("Jadwal Google Calendar dihilangkan dari tampilan");
-      return;
-    }
-    try {
-      await api.delete(`/meetings/${id}`);
-      playSound("click");
-      toast.success("Jadwal meeting dihapus");
-      loadMeetings();
-    } catch (err) {
-      toast.error(errMsg(err, "Gagal menghapus meeting"));
+  const promptDeleteMeeting = (meeting, e) => {
+    e?.stopPropagation?.();
+    setDeleteConfirmMeeting(meeting);
+  };
+
+  const confirmDeleteMeeting = () => {
+    if (!deleteConfirmMeeting) return;
+    const { id, is_gcal } = deleteConfirmMeeting;
+
+    // 100% Optimistic deletion (0ms delay)
+    setMeetings((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      try { localStorage.setItem("circle_meetings_cache", JSON.stringify(next)); } catch {}
+      return next;
+    });
+    setDeleteConfirmMeeting(null);
+    playSound("click");
+    toast.success("Jadwal meeting berhasil dihapus");
+
+    if (!is_gcal) {
+      api.delete(`/meetings/${id}`).catch((err) => {
+        toast.error(errMsg(err, "Gagal menghapus meeting di server"));
+        loadMeetings();
+      });
     }
   };
 
@@ -354,11 +423,13 @@ export default function Schedule() {
                         )}
                       </div>
                       <button
-                        onClick={(e) => deleteMeeting(m.id, m.title, m.is_gcal, e)}
-                        className="text-sub hover:text-rose-500 transition-colors p-1"
+                        type="button"
+                        onClick={(e) => promptDeleteMeeting(m, e)}
+                        className="text-sub hover:text-rose-500 transition-colors p-1.5 rounded-lg hover:bg-surface2"
                         aria-label="Hapus meeting"
+                        data-testid={`delete-meeting-${m.id}`}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
 
@@ -592,6 +663,33 @@ export default function Schedule() {
               </AccentButton>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Meeting Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmMeeting} onOpenChange={(v) => !v && setDeleteConfirmMeeting(null)}>
+        <DialogContent className="max-w-md p-6 bg-surface rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-ink">Hapus Jadwal Pertemuan?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-sub mt-2 leading-relaxed">
+            Apakah Anda yakin ingin menghapus jadwal rapat{" "}
+            <span className="font-bold text-ink">&ldquo;{deleteConfirmMeeting?.title}&rdquo;</span>?
+            {deleteConfirmMeeting?.gcal_synced && " Pertemuan ini juga akan dihilangkan dari tampilan jadwal."}
+          </p>
+          <div className="mt-6 flex justify-end gap-2">
+            <GhostButton type="button" onClick={() => setDeleteConfirmMeeting(null)}>
+              Batal
+            </GhostButton>
+            <AccentButton
+              type="button"
+              onClick={confirmDeleteMeeting}
+              className="bg-rose-500 hover:bg-rose-600 text-white"
+              data-testid="confirm-delete-meeting-btn"
+            >
+              <Trash2 size={14} /> Hapus Jadwal
+            </AccentButton>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

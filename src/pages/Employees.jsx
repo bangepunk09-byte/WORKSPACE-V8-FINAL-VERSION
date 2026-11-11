@@ -52,25 +52,27 @@ export default function Employees() {
         subtitle={`${list.length} dari ${humanUsers.length} karyawan aktif di workspace`}
       />
 
-      <div className="mb-6 flex flex-wrap items-center gap-2" data-testid="division-tabs">
-        <button onClick={() => setSel([])} className={chip(!sel.length)} data-testid="division-tab-all">
-          Semua
-        </button>
-        {divisions.map((d) => (
-          <button
-            key={d}
-            onClick={() => toggle(d)}
-            className={chip(sel.includes(d))}
-            data-testid={`division-tab-${d.replace(/\s/g, "-")}`}
-          >
-            {d}{" "}
-            <span className="opacity-70">
-              {humanUsers.filter((u) => (u.department || "Lainnya") === d).length}
-            </span>
+      <div className="mb-6 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between" data-testid="division-tabs">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scroll-thin">
+          <button onClick={() => setSel([])} className={chip(!sel.length)} data-testid="division-tab-all">
+            Semua
           </button>
-        ))}
-        <div className="ml-auto flex h-10 w-full items-center gap-2 rounded-full border bg-surface px-4 sm:w-64">
-          <Search size={15} className="text-sub" />
+          {divisions.map((d) => (
+            <button
+              key={d}
+              onClick={() => toggle(d)}
+              className={chip(sel.includes(d))}
+              data-testid={`division-tab-${d.replace(/\s/g, "-")}`}
+            >
+              {d}{" "}
+              <span className="opacity-70">
+                {humanUsers.filter((u) => (u.department || "Lainnya") === d).length}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="flex h-10 w-full sm:w-64 shrink-0 items-center gap-2 rounded-full border bg-surface px-4">
+          <Search size={15} className="text-sub shrink-0" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

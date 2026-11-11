@@ -49,6 +49,7 @@ import TaskCreate from "./tasks/TaskCreate";
 import TaskDetail from "./tasks/TaskDetail";
 import MonthlyStats from "./dashboard/MonthlyStats";
 import { playSound } from "../lib/sound";
+import { PWAInstallButton } from "../components/PWAInstallButton";
 
 const DEFAULT_WIDGET_CONFIG = {
   columns: ["meetings", "tasks", "messages"],
@@ -377,34 +378,34 @@ export default function Dashboard() {
     unread: 0
   };
 
-  // Density Spacing Presets (Extra spacious by default to prevent cramping)
+  // Density Spacing Presets (Responsive mobile-first padding + spacious desktop)
   const densityStyles = {
     spacious: {
-      outer: "space-y-10 py-8 px-4 sm:px-6 lg:px-8",
-      gridGap: "gap-8",
-      cardPadding: "p-7 sm:p-8",
-      cardHeader: "pb-5 mb-5",
-      itemSpacing: "space-y-4",
-      itemPadding: "p-4 sm:p-5",
-      footerMargin: "mt-7 pt-5"
+      outer: "space-y-5 sm:space-y-10 py-4 sm:py-8 px-3.5 sm:px-6 lg:px-8",
+      gridGap: "gap-5 sm:gap-8",
+      cardPadding: "p-4 sm:p-7 lg:p-8",
+      cardHeader: "pb-3.5 sm:pb-5 mb-3.5 sm:mb-5",
+      itemSpacing: "space-y-3 sm:space-y-4",
+      itemPadding: "p-3.5 sm:p-5",
+      footerMargin: "mt-5 sm:mt-7 pt-4 sm:pt-5"
     },
     normal: {
-      outer: "space-y-8 py-6 px-4 sm:px-6 lg:px-8",
-      gridGap: "gap-6",
-      cardPadding: "p-6 sm:p-7",
-      cardHeader: "pb-5 mb-4",
-      itemSpacing: "space-y-3.5",
-      itemPadding: "p-4",
-      footerMargin: "mt-6 pt-4"
+      outer: "space-y-5 sm:space-y-8 py-4 sm:py-6 px-3.5 sm:px-6 lg:px-8",
+      gridGap: "gap-4 sm:gap-6",
+      cardPadding: "p-4 sm:p-6 lg:p-7",
+      cardHeader: "pb-3.5 sm:pb-5 mb-3.5 sm:mb-4",
+      itemSpacing: "space-y-3 sm:space-y-3.5",
+      itemPadding: "p-3.5 sm:p-4",
+      footerMargin: "mt-4 sm:mt-6 pt-3.5 sm:pt-4"
     },
     compact: {
-      outer: "space-y-6 py-4 px-4 sm:px-5 lg:px-6",
+      outer: "space-y-4 sm:space-y-6 py-3.5 sm:py-4 px-3.5 sm:px-5 lg:px-6",
       gridGap: "gap-4 sm:gap-5",
-      cardPadding: "p-5",
-      cardHeader: "pb-4 mb-3",
+      cardPadding: "p-4 sm:p-5",
+      cardHeader: "pb-3 sm:pb-4 mb-3",
       itemSpacing: "space-y-2.5",
-      itemPadding: "p-3.5",
-      footerMargin: "mt-5 pt-3.5"
+      itemPadding: "p-3 sm:p-3.5",
+      footerMargin: "mt-4 sm:mt-5 pt-3 sm:pt-3.5"
     }
   }[widgetLayout.density || "spacious"];
 
@@ -758,24 +759,32 @@ export default function Dashboard() {
 
       <div className={`relative z-10 mx-auto max-w-[1520px] ${densityStyles.outer}`}>
         {/* Top Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-3.5 sm:flex-row sm:items-end sm:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-4 sm:border-b-0 sm:pb-0">
           <div>
-            <p className="text-sm font-medium text-sub" data-testid="dashboard-date">
+            <p className="text-xs sm:text-sm font-semibold text-sub" data-testid="dashboard-date">
               {format(new Date(), "EEEE, d MMMM yyyy")}
             </p>
-            <h1 className="mt-1 text-3xl sm:text-4xl font-extrabold tracking-tight text-ink" data-testid="dashboard-greeting">
+            <h1 className="mt-0.5 text-2xl sm:text-4xl font-extrabold tracking-tight text-ink" data-testid="dashboard-greeting">
               {greet}, {me?.name?.split(" ")[0]} 👋
             </h1>
           </div>
 
-          {/* Action Buttons in Top Right: Replaced Settings with Customize Tata Letak */}
-          <div className="flex flex-wrap items-center gap-3">
-            <AccentButton onClick={() => setNewTaskOpen(true)} data-testid="dashboard-new-task-btn">
+          {/* Action Buttons in Top Right: Responsive Grid on Mobile, Flex on Desktop */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3">
+            <AccentButton
+              onClick={() => setNewTaskOpen(true)}
+              data-testid="dashboard-new-task-btn"
+              className="col-span-2 sm:col-span-1 h-10 w-full sm:w-auto justify-center"
+            >
               <Plus size={16} /> {t("dash_new_task")}
             </AccentButton>
 
-            <GhostButton onClick={() => setBgOpen(true)} data-testid="dashboard-background-btn">
-              <Image size={16} /> {t("dash_background")}
+            <GhostButton
+              onClick={() => setBgOpen(true)}
+              data-testid="dashboard-background-btn"
+              className="h-10 w-full sm:w-auto justify-center text-xs sm:text-sm px-3 sm:px-4"
+            >
+              <Image size={15} /> <span className="truncate">{t("dash_background")}</span>
             </GhostButton>
 
             <GhostButton
@@ -784,19 +793,24 @@ export default function Dashboard() {
                 setLayoutOpen(true);
               }}
               data-testid="dashboard-customize-layout-btn"
-              className="border-slate-200 dark:border-slate-700 font-semibold shadow-xs hover:border-slate-300 dark:hover:border-slate-600"
+              className="h-10 w-full sm:w-auto justify-center border-slate-200 dark:border-slate-700 font-semibold text-xs sm:text-sm px-3 sm:px-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-600"
             >
-              <SlidersHorizontal size={16} className="text-rose-500" />
-              <span>{t("dash_customize_layout")}</span>
+              <SlidersHorizontal size={15} className="text-rose-500 shrink-0" />
+              <span className="truncate">{t("dash_customize_layout")}</span>
             </GhostButton>
           </div>
+        </div>
+
+        {/* Mobile PWA Install Banner */}
+        <div className="md:hidden">
+          <PWAInstallButton variant="card" />
         </div>
 
         {/* ============================================================ */}
         {/* TEAM WORKLOAD & MONTHLY PERFORMANCE SECTION (MOVED TO TOP)   */}
         {/* ============================================================ */}
         {(widgetLayout.visible.performance !== false || widgetLayout.visible.personnel !== false) && (
-          <div className="mb-8">
+          <div>
             <MonthlyStats
               showPerformance={widgetLayout.visible.performance !== false}
               showPersonnel={widgetLayout.visible.personnel !== false}
@@ -878,8 +892,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Category Filter Pills (coral red active state matching other tabs) */}
-            <div className="mb-5 flex flex-wrap items-center gap-2">
+            {/* Category Filter Pills (single-line scrollable on mobile) */}
+            <div className="mb-4 sm:mb-5 flex items-center gap-2 overflow-x-auto pb-1 scroll-thin">
               {dashboardDriveCategories.map((cat) => {
                 const active = driveCatFilter === cat;
                 return (
@@ -887,7 +901,7 @@ export default function Dashboard() {
                     key={cat}
                     type="button"
                     onClick={() => setDriveCatFilter(cat)}
-                    className={`h-9 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold transition-colors ${
+                    className={`h-9 shrink-0 whitespace-nowrap rounded-full px-4 text-xs sm:text-sm font-semibold transition-colors ${
                       active
                         ? "bg-brand text-white shadow-xs"
                         : "border bg-surface text-sub hover:text-ink"

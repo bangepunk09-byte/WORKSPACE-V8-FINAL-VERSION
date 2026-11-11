@@ -187,6 +187,30 @@ export function AppProvider({ children }) {
     applyTheme(buildTheme(ws?.theme, prefs, themeDraft));
   }, [ws?.theme, prefs, themeDraft]);
 
+  // Synchronize browser tab Favicon dynamically with Workspace Favicon / Logo
+  useEffect(() => {
+    const faviconFileId = ws?.favicon_file_id || ws?.logo_file_id;
+    const faviconHref = faviconFileId ? fileUrl(faviconFileId) : "/icon.svg";
+    
+    // Update or create standard icon link
+    let iconLink = document.querySelector("link[rel='icon']");
+    if (!iconLink) {
+      iconLink = document.createElement("link");
+      iconLink.rel = "icon";
+      document.head.appendChild(iconLink);
+    }
+    iconLink.href = faviconHref;
+
+    // Update or create Apple touch icon link
+    let appleTouchLink = document.querySelector("link[rel='apple-touch-icon']");
+    if (!appleTouchLink) {
+      appleTouchLink = document.createElement("link");
+      appleTouchLink.rel = "apple-touch-icon";
+      document.head.appendChild(appleTouchLink);
+    }
+    appleTouchLink.href = faviconHref;
+  }, [ws?.favicon_file_id, ws?.logo_file_id]);
+
   useEffect(() => {
     if (prefs.theme_mode !== "system") return undefined;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -283,8 +307,11 @@ export function AppProvider({ children }) {
         }
         emit(evt);
       };
+      s.onerror = () => {
+        // Silent error handler to prevent unhandled rejection when connection closes prematurely
+      };
       s.onclose = () => {
-        if (!closed) timer = setTimeout(connect, 1500);
+        if (!closed) timer = setTimeout(connect, 3000);
       };
     };
     connect();

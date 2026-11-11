@@ -116,15 +116,29 @@ export const rel = (iso) => (iso ? formatDistanceToNowStrict(new Date(iso), { ad
 
 export function PageHeader({ title, subtitle, actions, icon: Icon }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex items-center gap-3 min-w-0">
-        {Icon && <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl tint-accent"><Icon size={20} /></span>}
-        <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate" data-testid="page-title">{title}</h1>
-          {subtitle && <p className="text-sm text-sub mt-0.5">{subtitle}</p>}
+    <div className="mb-4 sm:mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200/70 dark:border-slate-800/80 pb-3.5 sm:border-b-0 sm:pb-0">
+      <div className="flex items-start sm:items-center gap-3 min-w-0">
+        {Icon && (
+          <span className="flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl tint-accent shadow-2xs">
+            <Icon size={20} />
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-ink leading-tight truncate" data-testid="page-title">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="text-xs sm:text-sm text-sub mt-0.5 line-clamp-2 sm:line-clamp-1 leading-relaxed">
+              {subtitle}
+            </p>
+          )}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto pt-1 sm:pt-0">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

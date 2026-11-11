@@ -11,6 +11,7 @@ import { UserProfileSettings } from "./settings/UserProfileSettings";
 import { Card, AdminOverview, PeopleAccess, WorkspaceBranding, DivisionsAdmin, ItemTypesAdmin, WeeklyReportCard, LabelsAdmin, StatusesAdmin, ProfileFieldsAdmin, StickersAdmin, AssistantBranding } from "./settings/AdminPanels";
 import { DEFAULT_COPYWRITING, generateCopywritingCsv, parseCopywritingCsv } from "../lib/i18n";
 import { playSound } from "../lib/sound";
+import { PWAInstallButton } from "../components/PWAInstallButton";
 
 const CATS = [["messages", "Direct & group messages"], ["mentions", "Mentions"], ["calls", "Calls & missed calls"], ["tasks", "Task assignments, reviews & completion"], ["deadlines", "Upcoming & overdue deadlines"], ["polls", "New polls"], ["groups", "Group invitations"], ["org", "Organization changes"], ["beranda", "Beranda: balasan, like & mention"]];
 
@@ -345,14 +346,19 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 animate-crossfade" data-testid="settings-page">
       <PageHeader icon={Cog} title="Settings" subtitle="Personalize CIRCLE and manage your workspace." />
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <nav className="flex gap-1 overflow-x-auto no-scrollbar lg:w-56 lg:shrink-0 lg:flex-col">
+      <div className="mb-5">
+        <PWAInstallButton variant="card" />
+      </div>
+      <div className="flex flex-col gap-5 sm:gap-6 lg:flex-row">
+        <nav className="flex gap-1.5 overflow-x-auto pb-1 scroll-thin lg:w-56 lg:shrink-0 lg:flex-col lg:pb-0">
           {tabs.map(([k, l]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`h-10 whitespace-nowrap rounded-xl px-3 text-left text-sm font-medium transition-colors ${
-                tab === k ? "bg-surface shadow-sm text-ink border" : "text-sub hover:bg-surface2 hover:text-ink"
+              className={`h-10 shrink-0 whitespace-nowrap rounded-xl px-3.5 text-left text-xs sm:text-sm font-semibold transition-colors ${
+                tab === k
+                  ? "bg-brand text-white shadow-xs lg:bg-surface lg:text-ink lg:border"
+                  : "border lg:border-0 bg-surface lg:bg-transparent text-sub hover:bg-surface2 hover:text-ink"
               }`}
               data-testid={`settings-tab-${k}`}
             >

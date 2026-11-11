@@ -1191,9 +1191,10 @@ export default function Directory() {
         subtitle={`${accessibleShortcutsCount} shortcut folder Google Drive dapat Anda akses · Terhubung langsung ke Google Drive & otomatis tampil di Dashboard sesuai hak akses member`}
       />
 
-      {/* 1 Line Toolbar: 1. Tambah Shortcut, 2. Connect ke GDrive, 3. Filter, 4. Cari Folder */}
+      {/* 1 Line Toolbar on Desktop, Responsive Structured Grid/Wrap on Mobile:
+          Order: 1. Tambah Shortcut, 2. Connect ke GDrive, 3. Filter, 4. Cari Folder */}
       <div
-        className="relative mb-6 flex flex-nowrap items-center gap-2.5"
+        className="relative mb-6 flex flex-wrap md:flex-nowrap items-center gap-2 sm:gap-2.5"
         data-testid="drive-action-search-row"
       >
         {/* 1. Tambah Shortcut */}
@@ -1202,16 +1203,16 @@ export default function Directory() {
             setEditingShortcut(null);
             setShortcutModalOpen(true);
           }}
-          className="h-10 shrink-0 whitespace-nowrap"
+          className="h-10 shrink-0 whitespace-nowrap text-xs sm:text-sm px-3.5 sm:px-4"
           data-testid="add-drive-shortcut-btn"
         >
-          <Plus size={16} /> Tambah Shortcut
+          <Plus size={15} /> Tambah Shortcut
         </AccentButton>
 
         {/* 2. Connect ke GDrive */}
         <GhostButton
           onClick={() => setDriveBrowserOpen(true)}
-          className="h-10 shrink-0 whitespace-nowrap"
+          className="h-10 shrink-0 whitespace-nowrap text-xs sm:text-sm px-3.5 sm:px-4"
           data-testid="connect-google-drive-btn"
         >
           <HardDrive size={15} className="text-brand" /> Connect Google Drive
@@ -1222,7 +1223,7 @@ export default function Directory() {
           <button
             type="button"
             onClick={() => setFilterMenuOpen((prev) => !prev)}
-            className={`inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-colors ${
+            className={`inline-flex h-10 items-center gap-1.5 sm:gap-2 whitespace-nowrap rounded-full px-3.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${
               selectedCategory !== "ALL" || accessFilter === "all" || filterMenuOpen
                 ? "bg-brand text-white shadow-xs"
                 : "border bg-surface text-sub hover:text-ink"
@@ -1244,7 +1245,7 @@ export default function Directory() {
                 onClick={() => setFilterMenuOpen(false)}
               />
               <div
-                className="absolute left-0 top-12 z-40 w-80 sm:w-96 rounded-2xl border bg-surface p-4 shadow-xl space-y-4"
+                className="fixed sm:absolute left-4 right-4 sm:left-0 sm:right-auto top-36 sm:top-12 z-40 sm:w-96 rounded-2xl border bg-surface p-4 shadow-xl space-y-4"
                 data-testid="drive-filter-popover"
               >
                 <div className="flex items-center justify-between border-b pb-2.5">
@@ -1336,7 +1337,7 @@ export default function Directory() {
         </div>
 
         {/* 4. Cari Folder */}
-        <div className="flex h-10 min-w-[180px] flex-1 items-center gap-2 rounded-full border bg-surface px-4">
+        <div className="flex h-10 w-full md:w-auto min-w-[200px] flex-1 items-center gap-2 rounded-full border bg-surface px-4">
           <Search size={15} className="shrink-0 text-sub" />
           <input
             value={driveSearch}

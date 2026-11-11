@@ -999,8 +999,8 @@ export default function Org() {
       </div>
 
       {/* View Switcher & Search */}
-      <div className="mb-5 flex flex-wrap items-center gap-2.5">
-        <div className="flex rounded-full border bg-surface p-1 text-sm font-semibold">
+      <div className="mb-5 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5">
+        <div className="flex w-full sm:w-auto overflow-x-auto rounded-2xl sm:rounded-full border bg-surface p-1 text-xs sm:text-sm font-semibold scroll-thin">
           {[
             ["chart", "Bagan Hierarki (Tree)"],
             ["grid", "Kartu Divisi (Grid)"],
@@ -1009,7 +1009,7 @@ export default function Org() {
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`rounded-full px-4 py-1.5 transition-colors cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap rounded-xl sm:rounded-full px-3.5 sm:px-4 py-1.5 transition-colors cursor-pointer ${
                 view === v ? "bg-brand text-white shadow-xs" : "text-sub hover:text-ink"
               }`}
               data-testid={`org-view-${v}`}
@@ -1020,8 +1020,8 @@ export default function Org() {
         </div>
 
         {view !== "table" && (
-          <div className="flex h-10 flex-1 min-w-[220px] items-center gap-2 rounded-full border bg-surface px-4">
-            <Search size={15} className="text-sub" />
+          <div className="flex h-10 w-full sm:w-auto flex-1 min-w-[200px] items-center gap-2 rounded-full border bg-surface px-4">
+            <Search size={15} className="text-sub shrink-0" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
